@@ -465,12 +465,6 @@ Its three contaminated cubits (`anime_details_cubit`, `manga_details_cubit`, `vi
 and their states reference JNI types directly and must be retyped to the plain entities
 before reuse — see the hard rule in §3.
 
-**Attribution:** the reference repo's `LICENSE` file is BSD 3-Clause while its `README`
-claims GPL-3.0 with an added attribution clause. Those imply different obligations and only
-the upstream author can resolve which applies. Until then, satisfy both readings: retain the
-original copyright notice for any copied file and credit the project prominently in
-`README.md`. Confirm the license before publishing.
-
 ---
 
 ## 13. Implementation order
@@ -517,14 +511,13 @@ the CI workflow of §11, and the docs of §14.
 ## 14. Documentation to write
 
 - **`README.md`** — what the app is, the no-content stance, fork-and-build instructions,
-  how extensions work, disclaimer, credits, license.
+  how extensions work, disclaimer, and credits.
 - **`extensions-spec/README.md`** — the extension authoring guide: the full contract from
   §5.3, the bridge API from §5.4, the repo index format from §5.2, versioning rules, and a
   walkthrough of the example extension.
 - **`extensions-spec/example/example_source.js`** — a complete, working extension that
   parses the HTML fixtures in `test/extensions/fixtures/`. It must not target a real site;
   its job is to document the API and to be the test subject.
-- **`CONTRIBUTING.md`** — setup, codegen, the `flutter analyze` gate, testing.
 
 ---
 
@@ -548,8 +541,7 @@ the CI workflow of §11, and the docs of §14.
 Flag these to the project owner rather than guessing:
 
 1. **`flutter_qjs` viability** — resolve in Phase 0. Blocks §5.
-2. **Upstream license** — BSD-3 or GPL-3? Determines obligations for seeded code (§12).
-3. **`media_kit` vs `video_player`** — feature coverage against APK size. Defer to Phase 4;
+2. **`media_kit` vs `video_player`** — feature coverage against APK size. Defer to Phase 4;
    the `JsRuntime`-style separation is not needed here since `Video` entities are player-agnostic.
-4. **Manga support** — out of scope for v1, but decide whether `ContentSourceRepository` should
+3. **Manga support** — out of scope for v1, but decide whether `ContentSourceRepository` should
    be generic over media type now, or be split later.

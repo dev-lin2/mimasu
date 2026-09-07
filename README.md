@@ -36,9 +36,9 @@ To get a build, fork this repository and run the pipeline yourself:
 4. Download the APK from the workflow run's artifacts.
 5. Install it on your device — you will need to allow installation from unknown sources.
 
-Builds are debug-signed by default. If you want a release-signed build, see
-[`CONTRIBUTING.md`](CONTRIBUTING.md) for supplying your own keystore via repository secrets.
-Note that switching keystores breaks in-place upgrades.
+Builds are debug-signed by default. To make a release-signed build, supply your own keystore
+via repository secrets — see §11 of [`INSTRUCTIONS.md`](INSTRUCTIONS.md). Note that switching
+keystores breaks in-place upgrades.
 
 ### Building locally
 
@@ -82,15 +82,13 @@ you can develop and test an extension offline.
 
 **Finding extensions:** that is up to you. This project does not maintain or recommend a
 directory of repositories. What you point the app at, and whether doing so is lawful where
-you live, is your responsibility.
+you live, is your responsibility. Requests to add specific content sources will be closed —
+the extension format is public precisely so that nobody has to ask.
 
 ## Contributing
 
-Bug reports and pull requests are welcome. See [`CONTRIBUTING.md`](CONTRIBUTING.md) for
-setup and [`INSTRUCTIONS.md`](INSTRUCTIONS.md) for the architecture and build specification.
-
-Requests to add specific content sources will be closed. The extension format is public
-precisely so that nobody has to ask.
+Bug reports and pull requests are welcome. [`INSTRUCTIONS.md`](INSTRUCTIONS.md) has the
+architecture and the build specification.
 
 ## Disclaimer
 
@@ -111,11 +109,3 @@ The metadata, persistence, and API layers are derived from
 [Unyo](https://github.com/K3vinb5/Unyo) by Kevin Borges. The extension model is inspired by
 [Mangayomi](https://github.com/kodjodevf/mangayomi) and
 [Aniyomi](https://github.com/aniyomiorg/aniyomi).
-
-## License
-
-**Not yet set — must be decided before this repository is made public.** Mimasu derives code
-from Unyo, whose own licensing is currently ambiguous (its `LICENSE` file is BSD 3-Clause
-while its README states GPL-3.0 with an added attribution clause). The license chosen here
-must be compatible with whichever of those actually applies. See §12 of
-[`INSTRUCTIONS.md`](INSTRUCTIONS.md).
