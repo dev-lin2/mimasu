@@ -34,8 +34,7 @@ empty source list and can browse nothing but public metadata.
 - **No prebuilt APK releases.** Users fork the repo and run the pipeline themselves.
   See §11.
 - No manga reading in v1. The architecture should not preclude it, but do not build it.
-- No torrent streaming. (The reference implementation had this; it does not port to
-  Android and is out of scope.)
+- No torrent streaming. It does not port cleanly to Android and is out of scope.
 - No iOS, no desktop. Android only.
 
 ---
@@ -50,10 +49,10 @@ empty source list and can browse nothing but public metadata.
 | HTTP | **`dio`** + `dio_cookie_manager` + `cookie_jar` | Extensions need cookies, redirect control, and per-request headers. `package:http` is too thin for this. |
 | HTML parsing | **`package:html`** (`querySelectorAll`, CSS selectors) | Host-side parsing exposed to JS as bridge functions — see §5.4 |
 | Video playback | **`media_kit`** (+ `media_kit_video`, `media_kit_libs_android_video`) | libmpv: HLS/DASH, custom headers, multiple audio tracks, external subtitles — matches what extensions return. Costs APK size; mitigate with `--split-per-abi` (§11). Alternative: `video_player` (ExoPlayer) is smaller and more battery-friendly but has weaker track/subtitle control. |
-| State management | `flutter_bloc` (Cubits) + `rxdart` | Matches the reference implementation, so its cubits can be seeded (§12) |
+| State management | `flutter_bloc` (Cubits) + `rxdart` | Cubits keep each screen's logic small and testable with `bloc_test`; `rxdart` for cross-cubit notifiers |
 | DI | `get_it` | Same reason |
 | Local storage | `hive_ce` (+ `hive_ce_generator`) | Same reason |
-| Routing | `go_router` | Simpler than `auto_route` for a small mobile nav graph and needs no codegen. **If you seed cubits/screens from the reference (§12), it uses `auto_route` — pick one and be consistent.** |
+| Routing | `go_router` | The nav graph is small; `go_router` handles it with no codegen, and its deep-link support is what §7.2 needs for the OAuth redirect |
 | Codegen | `freezed`, `json_serializable`, `build_runner` | |
 | Metadata API | AniList GraphQL | |
 | Logging | `logger` | |
@@ -93,10 +92,10 @@ presentation  →  application  →  domain  ←  data
 
 **No runtime-specific type may appear in a domain entity, a cubit, or a state class.**
 
-The reference implementation violated this: JNI types (`JVideo`, `JPage`, `JSManga`,
-`JSChapter`) leaked into its Freezed state classes, which is precisely why its content
-layer could not be swapped or reused. Extensions must produce plain Dart entities at the
-`data`/`extensions` boundary and nothing above that boundary may know JS exists.
+This is the failure mode that kills projects like this one: runtime types (JNI handles, JS
+objects) end up as field types in state classes, and from then on the content backend cannot
+be swapped or tested without the runtime present. Extensions must produce plain Dart entities
+at the `data`/`extensions` boundary, and nothing above that boundary may know JS exists.
 
 If you find yourself writing `import 'package:flutter_qjs/...'` anywhere outside
 `lib/extensions/`, stop — the design has gone wrong.
@@ -254,9 +253,8 @@ PreferenceItem
           { type: "select"|"text"|"switch", key, title, summary?, default?, values? }
 ```
 
-Note `Video` deliberately matches the reference implementation's `Video` entity field for
-field — it already has `fromJson`/`toJson`, so it can be seeded verbatim once its
-`fromJVideo` factory is deleted (§12).
+`Video` is a plain Dart class with `fromJson`/`toJson` and no knowledge of where it came
+from — that is what lets the player and the UI stay independent of the extension runtime.
 
 ### 5.4 The bridge API exposed to JS
 
@@ -344,11 +342,12 @@ user-correctable rather than silently guessing.
 AniList OAuth for list sync, plus a fully functional **anonymous mode** — the app must be
 usable with no account at all.
 
-### 7.2 Do not copy the reference implementation's OAuth flow
+### 7.2 Catching the redirect
 
-It ran a `shelf` HTTP server on localhost to catch the redirect, which is a desktop
-pattern. On Android use **App Links / a custom scheme** via `app_links`, registered in
-`AndroidManifest.xml`. Store tokens in `flutter_secure_storage`, not Hive.
+Use **App Links / a custom scheme** via `app_links`, registered in `AndroidManifest.xml`.
+Do not follow desktop tutorials that spin up a localhost HTTP server to catch the OAuth
+redirect — that pattern does not belong on Android. Store tokens in
+`flutter_secure_storage`, not Hive.
 
 ---
 
@@ -383,9 +382,9 @@ Design notes:
 
 - Material 3, `useMaterial3: true`, `ColorScheme.fromSeed`, with dynamic color via
   `dynamic_color` where the device supports it. Support dark and light.
-- Build against `MediaQuery` and `LayoutBuilder`. Do **not** use a fixed design size —
-  the reference implementation hardcoded `designSize: Size(1280, 720)` and that is exactly
-  what made it unusable on a phone.
+- Build against `MediaQuery` and `LayoutBuilder`. Do **not** adopt a fixed design size or a
+  scaling package that assumes one; a hardcoded `designSize` is what makes an app
+  structurally unable to render on a phone.
 - Minimum 48dp touch targets. Assume one-handed use: primary actions in the lower half.
 - Every list has explicit loading (skeletons), empty, and error states. Empty states must
   say what to do next — a fresh install with no extensions should explain that, not show
@@ -435,35 +434,28 @@ flutter build apk --release --split-per-abi
 
 ---
 
-## 12. Seeding from the reference implementation (optional but recommended)
+## 12. Write everything from scratch
 
-A working desktop app with the same metadata layer is checked out at
-`C:\Heysara\projects\unyo-app-mobile` (branch `rewrite`). It is the upstream author's
-unreleased WIP. Roughly 13,000 lines of it are source-agnostic and worth copying rather
-than retyping:
+**No code is copied from any other project.** Mimasu is written fresh. There is no
+reference checkout to seed from, and none is needed — the app's scope is anime metadata
+plus a JS extension host, which is far narrower than any existing client.
 
-| From the reference | Lines | Notes |
-|---|---|---|
-| `lib/core/services/api/` | ~3,900 | AniList GraphQL (1,122 lines across 6 files), Shikimori, AniZip, HTTP+retry, DTOs |
-| `lib/data/` | ~3,700 | Repositories, Hive adapters, models |
-| `lib/domain/` | ~1,500 | Entities and contracts |
-| `lib/application/` | ~4,300 | 12 of its 15 cubits are clean and reusable |
+Sources of truth to work from, rather than code to copy:
 
-**Do not copy** its `lib/presentation/` (~9,300 lines of desktop UI), its platform folders,
-or anything touching `window_manager`, `shelf`, `fvp`, or `torrserver`.
+- **AniList GraphQL API** — <https://docs.anilist.co>. Its docs and interactive explorer
+  are the authority. Write only the queries the screens in §9 actually need; expect around
+  half a dozen documents, not a general-purpose client.
+- **Aniyomi / Mangayomi** — useful as *conceptual* references for what an extension API has
+  to expose (filters, preferences, the popular/latest/search/detail/episodes/video shape).
+  Read them to understand the problem, then design §5 on its own terms.
 
-Three files need one deletion each — the factories are the entire coupling to the private
-`unyo_lib` package, and everything else in them is plain Dart with working `fromJson`/`toJson`:
+Two design mistakes are worth naming, because they are easy to repeat and expensive to
+undo. Both come from having examined an existing desktop client:
 
-```
-domain/entities/extension/video.dart:33     delete factory Video.fromJVideo
-domain/entities/extension/headers.dart:8    delete factory Headers.fromJHeaders
-domain/entities/extension/track.dart:16     delete factory Track.fromJTrack
-```
-
-Its three contaminated cubits (`anime_details_cubit`, `manga_details_cubit`, `video_cubit`)
-and their states reference JNI types directly and must be retyped to the plain entities
-before reuse — see the hard rule in §3.
+1. **Runtime types leaking upward.** Keeping JNI/JS types in state classes welds the app to
+   one content backend and makes it unswappable. See the hard rule in §3.
+2. **A fixed design size.** Hardcoding `designSize: Size(1280, 720)` and a minimum window
+   size makes an app structurally unable to render on a phone. See §9.
 
 ---
 
@@ -531,8 +523,8 @@ the CI workflow of §11, and the docs of §14.
 - **Cubit tests**: `bloc_test`, with `mocktail` repositories. Cover the failure paths
   explicitly: extension throws, extension times out, network down, empty results.
 - **Widget tests**: loading / empty / error states for the main screens.
-- Name test files `*_test.dart`. The reference implementation has two files under `test/`
-  that lack the suffix, so `flutter test` silently collects nothing — don't inherit that.
+- Name test files `*_test.dart`. Without the suffix `flutter test` silently collects
+  nothing and the suite passes while testing zero code.
 
 ---
 

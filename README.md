@@ -105,7 +105,6 @@ architecture and the build specification.
 
 Metadata is provided by [AniList](https://anilist.co).
 
-The metadata, persistence, and API layers are derived from
-[Unyo](https://github.com/K3vinb5/Unyo) by Kevin Borges. The extension model is inspired by
-[Mangayomi](https://github.com/kodjodevf/mangayomi) and
-[Aniyomi](https://github.com/aniyomiorg/aniyomi).
+The extension model is inspired by [Aniyomi](https://github.com/aniyomiorg/aniyomi) and
+[Mangayomi](https://github.com/kodjodevf/mangayomi), which pioneered this approach. No code
+is shared with either.
