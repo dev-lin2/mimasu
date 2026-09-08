@@ -23,12 +23,6 @@ class _ExtensionsScreenState extends State<ExtensionsScreen> {
   final _urlController = TextEditingController();
 
   @override
-  void initState() {
-    super.initState();
-    context.read<ExtensionsCubit>().start();
-  }
-
-  @override
   void dispose() {
     _urlController.dispose();
     super.dispose();
@@ -54,17 +48,16 @@ class _ExtensionsScreenState extends State<ExtensionsScreen> {
       builder: (context, state) {
         final cubit = context.read<ExtensionsCubit>();
         return Scaffold(
+          appBar: AppBar(title: const Text('Extensions')),
           body: SafeArea(
             child: ListView(
               padding: const EdgeInsets.fromLTRB(
                 AppSpace.gutter,
-                4,
+                8,
                 AppSpace.gutter,
                 32,
               ),
               children: [
-                const Text('Extensions', style: AppText.screenTitle),
-                const SizedBox(height: 20),
                 _AddRepoCard(
                   controller: _urlController,
                   busy: state.busy,
@@ -279,13 +272,19 @@ class _RepoStrip extends StatelessWidget {
                 padding: const EdgeInsets.all(12),
                 decoration: BoxDecoration(
                   color: repo.id == selected?.id
-                      ? AppColors.accent.withValues(alpha: 0.08)
+                      ? AppColors.surfaceRaised
                       : Colors.transparent,
                   borderRadius: BorderRadius.circular(10),
-                  border: Border.all(
-                    color: repo.id == selected?.id
-                        ? AppColors.accent
-                        : AppColors.outline,
+                  border: Border(
+                    top: const BorderSide(color: AppColors.outline),
+                    right: const BorderSide(color: AppColors.outline),
+                    bottom: const BorderSide(color: AppColors.outline),
+                    left: BorderSide(
+                      color: repo.id == selected?.id
+                          ? AppColors.accent
+                          : AppColors.outline,
+                      width: repo.id == selected?.id ? 3 : 1,
+                    ),
                   ),
                 ),
                 child: Row(

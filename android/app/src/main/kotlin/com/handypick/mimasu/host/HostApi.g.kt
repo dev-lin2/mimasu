@@ -226,6 +226,16 @@ interface ExtensionHostApi {
    */
   fun scanForExtensions(needles: List<String?>): List<ExtensionCandidate?>
   /**
+   * Whether the user has granted "install unknown apps" for this app.
+   * Checked live rather than cached: the user can revoke it at any time.
+   */
+  fun canInstallPackages(): Boolean
+  /**
+   * Opens the system settings page where that grant is made. Returns false
+   * if no such screen could be launched.
+   */
+  fun openInstallPermissionSettings(): Boolean
+  /**
    * Builds a PathClassLoader over [packageName]'s APK and tries to load each
    * of [classNames], reporting ancestry and errors rather than throwing.
    */
@@ -263,6 +273,36 @@ interface ExtensionHostApi {
             val needlesArg = args[0] as List<String?>
             val wrapped: List<Any?> = try {
               listOf(api.scanForExtensions(needlesArg))
+            } catch (exception: Throwable) {
+              wrapError(exception)
+            }
+            reply.reply(wrapped)
+          }
+        } else {
+          channel.setMessageHandler(null)
+        }
+      }
+      run {
+        val channel = BasicMessageChannel<Any?>(binaryMessenger, "dev.flutter.pigeon.mimasu.ExtensionHostApi.canInstallPackages$separatedMessageChannelSuffix", codec)
+        if (api != null) {
+          channel.setMessageHandler { _, reply ->
+            val wrapped: List<Any?> = try {
+              listOf(api.canInstallPackages())
+            } catch (exception: Throwable) {
+              wrapError(exception)
+            }
+            reply.reply(wrapped)
+          }
+        } else {
+          channel.setMessageHandler(null)
+        }
+      }
+      run {
+        val channel = BasicMessageChannel<Any?>(binaryMessenger, "dev.flutter.pigeon.mimasu.ExtensionHostApi.openInstallPermissionSettings$separatedMessageChannelSuffix", codec)
+        if (api != null) {
+          channel.setMessageHandler { _, reply ->
+            val wrapped: List<Any?> = try {
+              listOf(api.openInstallPermissionSettings())
             } catch (exception: Throwable) {
               wrapError(exception)
             }

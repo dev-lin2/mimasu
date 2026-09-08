@@ -3,65 +3,37 @@ import 'package:flutter_bloc/flutter_bloc.dart';
 
 import 'application/extensions/extensions_cubit.dart';
 import 'core/di/locator.dart';
+import 'core/router/app_router.dart';
 import 'core/theme/app_theme.dart';
+import 'data/storage/app_prefs.dart';
 import 'domain/repositories/extension_repository.dart';
-import 'presentation/screens/extensions/extensions_screen.dart';
-import 'presentation/screens/host_probe/host_probe_screen.dart';
 
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
   await configureDependencies();
-  runApp(const MimasuApp());
+  runApp(MimasuApp(prefs: locator<AppPrefs>()));
 }
 
 class MimasuApp extends StatelessWidget {
-  const MimasuApp({super.key});
+  const MimasuApp({required this.prefs, super.key});
 
-  @override
-  Widget build(BuildContext context) => MaterialApp(
-    title: 'Mimasu',
-    debugShowCheckedModeBanner: false,
-    theme: buildDarkTheme(),
-    // Dark only: no light theme is designed (INSTRUCTIONS.md section 10).
-    darkTheme: buildDarkTheme(),
-    themeMode: ThemeMode.dark,
-    home: const _Home(),
-  );
-}
-
-/// Temporary shell. The bottom-nav shell of section 10 arrives with the rest
-/// of Phase 1; until then the Extensions screen is the app, with the Phase 0
-/// host probe reachable beside it.
-class _Home extends StatelessWidget {
-  const _Home();
+  final AppPrefs prefs;
 
   @override
   Widget build(BuildContext context) {
+    // One cubit above the router: Home and Settings both read the repository
+    // count, and the Extensions screen is pushed from either, so its state
+    // has to outlive any single route.
     return BlocProvider(
-      create: (_) => ExtensionsCubit(locator<ExtensionRepository>()),
-      child: Builder(
-        builder: (context) => Stack(
-          children: [
-            const ExtensionsScreen(),
-            Positioned(
-              top: MediaQuery.of(context).padding.top + 6,
-              right: 8,
-              child: IconButton(
-                tooltip: 'Extension host probe',
-                icon: const Icon(
-                  Icons.memory,
-                  color: AppColors.textTertiary,
-                  size: 20,
-                ),
-                onPressed: () => Navigator.of(context).push(
-                  MaterialPageRoute<void>(
-                    builder: (_) => const HostProbeScreen(),
-                  ),
-                ),
-              ),
-            ),
-          ],
-        ),
+      create: (_) => ExtensionsCubit(locator<ExtensionRepository>())..start(),
+      child: MaterialApp.router(
+        title: 'Mimasu',
+        debugShowCheckedModeBanner: false,
+        theme: buildDarkTheme(),
+        darkTheme: buildDarkTheme(),
+        // Dark only; no light theme is designed (INSTRUCTIONS.md section 10).
+        themeMode: ThemeMode.dark,
+        routerConfig: buildRouter(prefs),
       ),
     );
   }

@@ -1,9 +1,12 @@
 package com.handypick.mimasu.host
 
 import android.content.Context
+import android.content.Intent
 import android.content.pm.PackageInfo
 import android.content.pm.PackageManager
+import android.net.Uri
 import android.os.Build
+import android.provider.Settings
 import dalvik.system.PathClassLoader
 import java.security.MessageDigest
 
@@ -30,6 +33,40 @@ class ExtensionHostImpl(private val context: Context) : ExtensionHostApi {
             true
         },
     )
+
+    override fun canInstallPackages(): Boolean =
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+            pm.canRequestPackageInstalls()
+        } else {
+            true
+        }
+
+    /**
+     * Declaring REQUEST_INSTALL_PACKAGES is not enough; the grant is per-app
+     * and made by the user in system settings (INSTRUCTIONS.md 5.4). This
+     * takes them straight there rather than asking them to go hunting.
+     */
+    override fun openInstallPermissionSettings(): Boolean {
+        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.O) return false
+        val intents = listOf(
+            Intent(
+                Settings.ACTION_MANAGE_UNKNOWN_APP_SOURCES,
+                Uri.parse("package:${context.packageName}"),
+            ),
+            // Some devices refuse the package-scoped form and only accept the list.
+            Intent(Settings.ACTION_MANAGE_UNKNOWN_APP_SOURCES),
+        )
+        for (intent in intents) {
+            intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+            try {
+                context.startActivity(intent)
+                return true
+            } catch (_: Throwable) {
+                // Try the next shape; report false only if none work.
+            }
+        }
+        return false
+    }
 
     override fun scanForExtensions(needles: List<String?>): List<ExtensionCandidate?> {
         val terms = needles.filterNotNull().map { it.lowercase() }

@@ -99,6 +99,14 @@ abstract class ExtensionHostApi {
   /// Pass something like ["tachiyomi", "aniyomi", "extension"].
   List<ExtensionCandidate?> scanForExtensions(List<String?> needles);
 
+  /// Whether the user has granted "install unknown apps" for this app.
+  /// Checked live rather than cached: the user can revoke it at any time.
+  bool canInstallPackages();
+
+  /// Opens the system settings page where that grant is made. Returns false
+  /// if no such screen could be launched.
+  bool openInstallPermissionSettings();
+
   /// Builds a PathClassLoader over [packageName]'s APK and tries to load each
   /// of [classNames], reporting ancestry and errors rather than throwing.
   List<ClassProbeResult?> probeClasses(
