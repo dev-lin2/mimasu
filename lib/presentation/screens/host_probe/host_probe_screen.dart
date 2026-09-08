@@ -46,13 +46,16 @@ class _HostProbeScreenState extends State<HostProbeScreen> {
       final info = await _host.getHostInfo();
       final found = await _host.scanForExtensions(_needles);
 
-      // Probe whatever class names each candidate's own metadata advertises.
+      // Source classes are declared in a metadata key ending `.class`, e.g.
+      // `tachiyomi.extension.class`, semicolon-separated. Confirmed against
+      // real extensions; do not go back to scraping every metadata value —
+      // that picked up the lib version ("1.6") as a class name.
       final probes = <ClassProbeResult?>[];
       for (final c in found) {
         if (c == null) continue;
-        final classNames = c.metadata.values
-            .whereType<String>()
-            .where((v) => v.contains('.') && !v.contains(' '))
+        final classNames = c.metadata.entries
+            .where((e) => (e.key ?? '').endsWith('.class'))
+            .map((e) => e.value ?? '')
             .expand((v) => v.split(';'))
             .map((v) => v.trim())
             .where((v) => v.isNotEmpty)

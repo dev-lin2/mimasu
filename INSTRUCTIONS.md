@@ -9,6 +9,11 @@ or a real repository index before you rely on it. There are more of these than i
 ordinary spec, because this app deliberately targets a third-party extension format whose
 details live in someone else's source tree.
 
+Many VERIFY markers have since been answered on a real device. Those findings — the
+confirmed feature name, metadata keys, signing-key check and class surface — are in
+[`docs/phase-0-findings.md`](docs/phase-0-findings.md), and this document points at it
+where relevant.
+
 The screen designs referenced throughout live in [`docs/design.pen`](docs/design.pen) —
 23 artboards plus 3 shared components.
 
@@ -83,8 +88,8 @@ above. Do not write "sandboxed".
 | Extension host | Kotlin, `PathClassLoader` + reflection | The only way to load Aniyomi extension APKs (§5.3) |
 | Extension HTTP | **OkHttp** (Kotlin side) | What extensions expect to be handed. Not `dio` |
 | HTML parsing | **Jsoup** (Kotlin side) | Extensions call `asJsoup()` and expect Jsoup nodes |
-| Extension DI | **Injekt** (`uy.kohesive.injekt`) | Extensions use `injectLazy()` to obtain the network client and preferences. **VERIFY** the exact artifact and version an extension expects |
-| Reactive | **RxJava 1.x** shim | Older extensions return `rx.Observable`; newer ones are `suspend`. Support both. **VERIFY** which the current lib version uses |
+| Extension DI | **Injekt** (`uy.kohesive.injekt`) | Extensions use `injectLazy()` to obtain the network client and preferences. Confirmed present in a real extension: `uy.kohesive.injekt.InjektKt`, `.api.InjektScope`, `.api.InjektFactory`, `.api.FullTypeReference` |
+| Reactive | **RxJava 1.x** shim | Confirmed: a lib-1.4 extension references `rx.Observable`. Newer ones are `suspend`. Support both |
 | App-side HTTP | `dio` | Fetching repository indexes and downloading APKs only |
 | `index.pb` decoding | `protobuf` Dart package, or a hand-rolled wire walker | See §6.2 |
 | Video playback | **`media_kit`** (+ `media_kit_video`, `media_kit_libs_android_video`) | libmpv: HLS/DASH, custom headers, multiple audio tracks, external subtitles. Mitigate APK size with `--split-per-abi` (§12) |
@@ -232,9 +237,15 @@ That last sentence is the whole design constraint. Get it wrong and every extens
 
 ### 5.2 The compatibility shim
 
-The host must supply the Aniyomi anime extension API under its original package names.
-**VERIFY every name below against the extensions-lib version you are targeting** — these are
-recalled, not confirmed, and the API has versioned over time.
+The host must supply the extension API under its original package names.
+
+**The manga-flavour surface is now CONFIRMED** by reading a real extension's `classes.dex`.
+The exact class list, the third-party libraries that must also be on the classpath, and the
+order to build them in are in [`docs/phase-0-findings.md`](docs/phase-0-findings.md) §4.
+Build against that, not the recollection below.
+
+The anime flavour is expected to mirror it and is **not confirmed**. Names below are the
+expected shape:
 
 Expected surface, anime side:
 
@@ -261,10 +272,15 @@ naming the extension and both versions.
 
 Follow the approach Aniyomi and Mihon use:
 
-1. Query `PackageManager` for installed packages declaring the anime-extension feature.
-   **VERIFY** the exact feature name and metadata keys — expect something in the shape of
-   `tachiyomi.animeextension` with metadata giving the source class list, an NSFW flag, and
-   the lib version.
+1. Query `PackageManager` for installed packages declaring the extension feature, with
+   `GET_CONFIGURATIONS | GET_META_DATA | GET_SIGNING_CERTIFICATES`. The feature name appears
+   in `packageInfo.reqFeatures`.
+   **CONFIRMED for manga: the feature is `tachiyomi.extension`**, and the metadata keys are
+   `tachiyomi.extension.class` (semicolon-separated source classes) and
+   `tachiyomi.extension.nsfw`, with the lib version in `tachiyomix.extensionLib`. Full
+   evidence in [`docs/phase-0-findings.md`](docs/phase-0-findings.md). The anime feature is
+   expected to be `tachiyomi.animeextension` by the same pattern but is **not confirmed** —
+   discover it, do not hardcode it.
 2. For each match, build a class loader over the package's APK path
    (`PathClassLoader(apkPath, parentClassLoader)`).
 3. Instantiate each declared class and cast to `AnimeSource` or `AnimeSourceFactory`.
@@ -284,8 +300,13 @@ Notes that will bite you:
 
 1. Download the APK from the URL the repository index gave, over `dio`, into app storage.
 2. Check the signing certificate before offering to install (§5.5).
-3. Hand off to the system package installer via intent. The app needs
-   `REQUEST_INSTALL_PACKAGES`, and the user must allow installs from Mimasu once, at OS level.
+3. Hand off to the system package installer via intent.
+
+   **Declaring `REQUEST_INSTALL_PACKAGES` is not sufficient.** Confirmed on device:
+   `canRequestPackageInstalls()` returns false on a fresh install, because the grant is
+   per-app and made by the user in system settings. The install flow needs a permission
+   gate that checks it and routes the user there **before** the installer is launched,
+   otherwise the first install silently fails. The design has no screen for this yet.
 4. Observe the install result, then re-run discovery.
 
 The UI for this is drawn: the Extensions screen, the untrusted prompt, and step 3 of the
@@ -314,8 +335,11 @@ extension adds rather than rendering it, and exposes the result as serializable 
 written back into the `SharedPreferences` instance that extension was given via Injekt,
 namespaced per extension.
 
-This is fiddly and easy to get subtly wrong. **VERIFY** the preference classes an extension
-actually constructs before designing the descriptor type.
+This is fiddly and easy to get subtly wrong, but the classes involved are now
+**CONFIRMED**: a real extension references `androidx.preference.Preference`,
+`PreferenceScreen`, `SwitchPreferenceCompat` and `Preference.OnPreferenceChangeListener`,
+so the host stand-in must satisfy that API. See
+[`docs/phase-0-findings.md`](docs/phase-0-findings.md) §4.
 
 ### 5.7 Request logging
 
@@ -648,9 +672,11 @@ docs of §15, and a `NOTICE` file per §13.
 
 ## 17. Open decisions
 
-1. **The exact `extensions-lib` surface and version to target.** Resolve in Phase 0. Blocks
-   all of §5. This has replaced the old JavaScript-runtime question as the project's single
-   largest risk.
+1. **Does the anime `extensions-lib` flavour mirror the manga one?** Narrowed by Phase 0:
+   the manga surface is confirmed in [`docs/phase-0-findings.md`](docs/phase-0-findings.md),
+   along with signature verification working end to end. What remains is whether the anime
+   classes mirror it, which one anime extension APK answers. Still the largest risk, but a
+   much smaller question than before.
 2. **Anime repository URLs for testing.** The project ships and recommends none, but
    development needs at least one real anime-side repository in each index format. Sourcing
    these is the owner's call, not the app's.
