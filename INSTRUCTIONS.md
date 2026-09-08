@@ -3,39 +3,73 @@
 This document is the build specification for Mimasu. It is written to be handed to a
 developer (or a Claude Code session) who will implement the app from scratch.
 
-Read this file end to end before writing code. Where it says **VERIFY**, the fact could
-not be confirmed offline and must be checked against pub.dev / the toolchain before you
-rely on it.
+Read this file end to end before writing code. Where it says **VERIFY**, the fact could not
+be confirmed offline and must be checked against the real toolchain, a real extension APK,
+or a real repository index before you rely on it. There are more of these than in an
+ordinary spec, because this app deliberately targets a third-party extension format whose
+details live in someone else's source tree.
+
+The screen designs referenced throughout live in [`docs/design.pen`](docs/design.pen) —
+23 artboards plus 3 shared components.
 
 ---
 
 ## 1. What we are building
 
-An **Android anime-watching app** that ships **no content and no content sources**.
+An **Android video app that ships no content and no content sources.** It is an extension
+host, compatible with the **Aniyomi anime extension format**.
 
-The app is an extension host. All content comes from JavaScript extensions that the user
-installs themselves by pasting in a repository URL. On a fresh install the app has an
-empty source list and can browse nothing but public metadata.
+Everything playable comes from extension APKs the user installs themselves after pasting in
+a repository URL they found. On a fresh install the app is empty: no sources, nothing to
+browse, nothing to play.
 
 ### In scope (v1)
 
-- Anime metadata browsing, search, and details (AniList)
-- User library / list sync (AniList OAuth)
-- JS extension runtime: install, update, remove, configure extensions
-- Content discovery through installed extensions (popular, latest, search, details)
-- Episode listing and video playback with quality, audio-track, and subtitle selection
-- Release calendar
+- Add and remove extension repositories by URL, in **both** index formats (§6)
+- Install, trust, update, enable/disable and remove extension APKs
+- Browse through installed extensions: popular, latest, search, with the extension's own filters
+- Anime detail and episode list, sourced entirely from the extension
+- Video playback with quality, audio-track and subtitle selection
+- **Episode downloads** and offline playback
+- A **local** library of saved series and watch progress
+- Per-extension preferences, generated from what the extension declares
+- Per-extension request log
 
 ### Explicit non-goals
 
-- **No bundled extensions, and no curated index of content-source repositories.** The app
-  ships with an empty repository list. Document the *format* so anyone can write and host
-  a source; do not ship or link a directory of sources.
-- **No prebuilt APK releases.** Users fork the repo and run the pipeline themselves.
-  See §11.
-- No manga reading in v1. The architecture should not preclude it, but do not build it.
-- No torrent streaming. It does not port cleanly to Android and is out of scope.
-- No iOS, no desktop. Android only.
+- **No account or tracking integration.** No AniList, no MAL, no Simkl. The library is local
+  only. This is a deliberate reduction from an earlier draft of this spec; a tracker can be
+  added later behind its own repository interface, but nothing in v1 depends on one.
+- **No metadata service.** There is no AniList-style catalogue underneath. Every title,
+  synopsis, thumbnail and episode number comes from an extension. The app shows what the
+  extension gives it and nothing more.
+- **No bundled extensions, and no curated index of repositories.** The app ships with an
+  empty repository list. Document the format; do not ship or link a directory of sources.
+- **No prebuilt APK releases.** Users fork the repo and run the pipeline themselves (§12).
+- **No manga.** Video only. Manga extensions implement a different interface (`HttpSource`
+  with `SManga`/`SChapter`/`Page`) and will not load. Refuse them with a clear message.
+- No torrent streaming. No iOS, no desktop. Android only.
+
+### The security posture, stated honestly
+
+An earlier draft of this spec ran extensions as JavaScript in a QuickJS sandbox and promised
+that extensions could not open sockets, read files, or import anything. **That is no longer
+true and no document or screen may claim it.**
+
+Aniyomi extensions are Android APKs containing compiled Kotlin. Once installed they run as
+real Android code in the app's process with the app's permissions, including network access.
+There is no sandbox. What the app can offer instead is:
+
+- **Signing-key verification.** Every extension's signing certificate is checked against a
+  trusted set. An unrecognised key triggers an explicit, informed prompt before install (§5.5).
+- **Best-effort request logging.** Extensions obtain an OkHttp client from the host, and the
+  host installs an interceptor on it. An extension that builds its own client bypasses this.
+  The UI must describe the log as useful, not complete.
+- **Visible provenance.** Which repository an extension came from, its package name, version
+  and key fingerprint, all surfaced in the UI.
+
+Every user-facing string about extension safety must be consistent with the three bullets
+above. Do not write "sandboxed".
 
 ---
 
@@ -43,62 +77,76 @@ empty source list and can browse nothing but public metadata.
 
 | Concern | Choice | Why |
 |---|---|---|
-| Framework | Flutter, Android only | Single language across app and extension bridge |
-| Language | Dart 3.x | |
-| JS runtime | **`flutter_qjs`** (QuickJS over `dart:ffi`) | Promise/async support and two-way Dart↔JS function bridging, which the extension API needs. **VERIFY** current maintenance status and Android build on pub.dev. Fallback: `flutter_js` (QuickJS on Android). **Wrap it behind a `JsRuntime` interface (§5.6) so it is swappable in one file.** |
-| HTTP | **`dio`** + `dio_cookie_manager` + `cookie_jar` | Extensions need cookies, redirect control, and per-request headers. `package:http` is too thin for this. |
-| HTML parsing | **`package:html`** (`querySelectorAll`, CSS selectors) | Host-side parsing exposed to JS as bridge functions — see §5.4 |
-| Video playback | **`media_kit`** (+ `media_kit_video`, `media_kit_libs_android_video`) | libmpv: HLS/DASH, custom headers, multiple audio tracks, external subtitles — matches what extensions return. Costs APK size; mitigate with `--split-per-abi` (§11). Alternative: `video_player` (ExoPlayer) is smaller and more battery-friendly but has weaker track/subtitle control. |
-| State management | `flutter_bloc` (Cubits) + `rxdart` | Cubits keep each screen's logic small and testable with `bloc_test`; `rxdart` for cross-cubit notifiers |
-| DI | `get_it` | Same reason |
-| Local storage | `hive_ce` (+ `hive_ce_generator`) | Same reason |
-| Routing | `go_router` | The nav graph is small; `go_router` handles it with no codegen, and its deep-link support is what §7.2 needs for the OAuth redirect |
-| Codegen | `freezed`, `json_serializable`, `build_runner` | |
-| Metadata API | AniList GraphQL | |
+| App framework | Flutter, Android only | Owns UI, local storage and orchestration |
+| Language | Dart 3.x + **Kotlin** | The extension host cannot be anything but Kotlin (§5) |
+| Dart↔Kotlin bridge | **`pigeon`** | Typed, generated channel. Only plain data crosses — see §3 |
+| Extension host | Kotlin, `PathClassLoader` + reflection | The only way to load Aniyomi extension APKs (§5.3) |
+| Extension HTTP | **OkHttp** (Kotlin side) | What extensions expect to be handed. Not `dio` |
+| HTML parsing | **Jsoup** (Kotlin side) | Extensions call `asJsoup()` and expect Jsoup nodes |
+| Extension DI | **Injekt** (`uy.kohesive.injekt`) | Extensions use `injectLazy()` to obtain the network client and preferences. **VERIFY** the exact artifact and version an extension expects |
+| Reactive | **RxJava 1.x** shim | Older extensions return `rx.Observable`; newer ones are `suspend`. Support both. **VERIFY** which the current lib version uses |
+| App-side HTTP | `dio` | Fetching repository indexes and downloading APKs only |
+| `index.pb` decoding | `protobuf` Dart package, or a hand-rolled wire walker | See §6.2 |
+| Video playback | **`media_kit`** (+ `media_kit_video`, `media_kit_libs_android_video`) | libmpv: HLS/DASH, custom headers, multiple audio tracks, external subtitles. Mitigate APK size with `--split-per-abi` (§12) |
+| Downloads | **Kotlin foreground service** + `WorkManager` | Android kills background Dart isolates; a Dart-side download queue will not survive. Orchestrated from Dart, executed natively |
+| State management | `flutter_bloc` (Cubits) + `rxdart` | Small, testable per-screen logic |
+| DI (Dart side) | `get_it` | |
+| Local storage | `hive_ce` (+ `hive_ce_generator`) | |
+| Routing | `go_router` | Small nav graph, no codegen |
+| Codegen | `freezed`, `json_serializable`, `build_runner`, `pigeon` | |
 | Logging | `logger` | |
-| Secure token storage | `flutter_secure_storage` | OAuth tokens must not sit in Hive in plaintext |
-| Deep links | `app_links` | AniList OAuth redirect (§7.2) |
+
+### Removed from the previous draft
+
+`flutter_qjs` / `flutter_js` (no JavaScript runtime), `flutter_secure_storage` and
+`app_links` (no OAuth), and the AniList GraphQL layer. If you find references to these
+anywhere, they are stale.
 
 ### Toolchain
 
-- **Flutter**: latest stable. Pin it in `.fvmrc` and in CI so builds are reproducible.
-- **JDK 17 or 21 — not 25.** Flutter's bundled Gradle and the Android Gradle Plugin do not
-  support JDK 25. If the machine has a newer JDK, install 17 or 21 and point Flutter at it:
-  `flutter config --jdk-dir=<path>`. Expect to hit this on the very first Gradle build.
-- **Android SDK**: accept licenses first with `flutter doctor --android-licenses`.
-- **minSdk 24**, targetSdk latest. `media_kit` needs 21+; 24 avoids a pile of legacy paths.
+- **Flutter**: latest stable. Pin it in `.fvmrc` and in CI.
+- **JDK 17 or 21 — not 25.** Flutter's bundled Gradle and AGP do not support JDK 25. Point
+  Flutter at a supported one: `flutter config --jdk-dir=<path>`. Expect to hit this on the
+  first Gradle build.
+- **Android SDK**: accept licenses with `flutter doctor --android-licenses`.
+- **minSdk 24**, targetSdk latest.
+- The app needs `REQUEST_INSTALL_PACKAGES` to install extension APKs (§5.4).
 
 ---
 
 ## 3. Architecture
 
-Clean layering, dependencies pointing inward:
-
 ```
 presentation  →  application  →  domain  ←  data
                                      ↑
-                                extensions
+                              extensions (Dart)
+                                     ↑
+                            Pigeon channel
+                                     ↑
+                          Kotlin extension host
 ```
 
 | Layer | Contains | Rules |
 |---|---|---|
-| `domain/` | Entities, repository interfaces | Pure Dart. No Flutter, no JS, no HTTP, no `dart:io`. |
-| `data/` | Repository implementations, DTOs, Hive adapters | Implements domain contracts. Maps external shapes to entities at the boundary. |
-| `extensions/` | JS runtime, bridge, extension manager | Implements a domain contract like any other data source. |
-| `application/` | Cubits + Freezed states | No `dart:io`, no JS types. See the hard rule below. |
+| `domain/` | Entities, repository interfaces | Pure Dart. No Flutter, no platform channels, no `dart:io`. |
+| `data/` | Repository implementations, DTOs, Hive adapters | Implements domain contracts. |
+| `extensions/` | Dart side of the channel, extension manager, repo index parsing | Implements a domain contract like any other data source. |
+| `application/` | Cubits + Freezed states | No channel types, no DTOs. |
 | `presentation/` | Screens, widgets | Mobile-first. Reads cubit state only. |
+| `android/.../host/` | Kotlin extension host and lib shim | Knows nothing about the UI. |
 
 ### The one hard rule
 
-**No runtime-specific type may appear in a domain entity, a cubit, or a state class.**
+**No runtime-specific or wire-specific type may appear in a domain entity, a cubit, or a
+state class.**
 
-This is the failure mode that kills projects like this one: runtime types (JNI handles, JS
-objects) end up as field types in state classes, and from then on the content backend cannot
-be swapped or tested without the runtime present. Extensions must produce plain Dart entities
-at the `data`/`extensions` boundary, and nothing above that boundary may know JS exists.
+The Pigeon boundary helps you here: only plain serializable data can cross a platform
+channel, so a Kotlin `SAnime` physically cannot end up in a Dart state class. Do not
+undo that by passing Pigeon-generated classes upward — map them to domain entities at the
+`extensions/` boundary and let nothing above that point know a channel exists.
 
-If you find yourself writing `import 'package:flutter_qjs/...'` anywhere outside
-`lib/extensions/`, stop — the design has gone wrong.
+This is what makes the content backend swappable and testable. Cubit tests must be able to
+run with no Android host present at all.
 
 ---
 
@@ -107,57 +155,61 @@ If you find yourself writing `import 'package:flutter_qjs/...'` anywhere outside
 ```
 lib/
 ├── main.dart
-├── app.dart                          # MaterialApp.router, theme, localization
+├── app.dart
 ├── core/
-│   ├── di/locator.dart               # get_it registrations
+│   ├── di/locator.dart
 │   ├── router/app_router.dart
-│   ├── theme/
+│   ├── theme/                        # tokens mirror docs/design.pen (§10)
 │   ├── log/
-│   └── services/
-│       ├── http/                     # dio client, retry, cookie jar
-│       └── api/
-│           ├── graphql/queries/      # AniList GraphQL documents
-│           └── dto/                  # wire-format DTOs (never leave data/)
+│   └── services/http/                # dio: repo indexes and APK downloads only
 ├── domain/
 │   ├── entities/
-│   │   ├── media/                    # Anime, Episode, MediaList, MediaListEntry
-│   │   ├── source/                   # SAnime, SEpisode, Video, Track, Headers, Page
-│   │   └── extension/                # Extension, ExtensionRepo, PreferenceItem
-│   └── repositories/                 # AnimeRepository, UserRepository,
-│                                     # ExtensionRepository, ContentSourceRepository
+│   │   ├── source/                   # SAnime, SEpisode, Video, Track, AnimeFilter
+│   │   ├── extension/                # Extension, ExtensionRepo, TrustState, PreferenceItem
+│   │   ├── library/                  # LibraryEntry, WatchProgress
+│   │   └── download/                 # DownloadTask, DownloadState
+│   └── repositories/                 # ContentSourceRepository, ExtensionRepository,
+│                                     # LibraryRepository, DownloadRepository
 ├── data/
 │   ├── repositories/
 │   ├── models/
-│   └── adapters/                     # Hive type adapters
-├── extensions/                       # ← the only place that knows JS exists
-│   ├── runtime/
-│   │   ├── js_runtime.dart           # abstract interface (§5.6)
-│   │   └── quickjs_runtime.dart      # flutter_qjs implementation
-│   ├── bridge/
-│   │   ├── bridge_registry.dart      # installs all bridge functions
-│   │   ├── http_bridge.dart
-│   │   ├── html_bridge.dart
-│   │   ├── crypto_bridge.dart
-│   │   └── prefs_bridge.dart
-│   ├── extension_manager.dart        # install / update / remove / enable
-│   ├── extension_loader.dart         # fetch repo index, download .js, hash, store
-│   └── content_source_js.dart        # implements ContentSourceRepository
-├── application/
-│   ├── cubits/
-│   └── states/
-└── presentation/
-    ├── screens/
-    └── widgets/
+│   └── adapters/
+├── extensions/
+│   ├── host/
+│   │   ├── extension_host.dart       # Dart side of the Pigeon channel
+│   │   └── host_api.g.dart           # generated
+│   ├── repo/
+│   │   ├── repo_index_parser.dart    # interface
+│   │   ├── json_index_parser.dart    # index.min.json
+│   │   └── pb_index_parser.dart      # index.pb
+│   ├── extension_manager.dart        # install / trust / update / remove / enable
+│   └── content_source_native.dart    # implements ContentSourceRepository
+├── application/{cubits,states}/
+└── presentation/{screens,widgets}/
 
-extensions-spec/
-├── README.md                         # the public extension authoring guide
-├── example/example_source.js         # runs against test fixtures only
-└── schema/repo-index.schema.json
+android/app/src/main/kotlin/<pkg>/
+├── host/
+│   ├── ExtensionLoader.kt            # PackageManager discovery + PathClassLoader
+│   ├── ExtensionInstaller.kt         # installer intents, signature checks
+│   ├── SourceRegistry.kt             # loaded source instances by id
+│   ├── SourceCaller.kt               # invokes source methods, maps results to Pigeon
+│   ├── PreferenceCollector.kt        # §5.6
+│   └── HostApi.kt                    # generated Pigeon interface impl
+├── shim/                             # the Aniyomi extensions-lib surface (§5.2)
+│   └── eu/kanade/tachiyomi/...
+└── download/
+    └── DownloadService.kt            # foreground service + WorkManager
+
+docs/
+└── design.pen                        # 23 screens, 3 components
+
+extension-format/
+├── README.md                         # what Mimasu supports and what it does not
+└── schema/                           # index.min.json shape, derived index.pb schema
 
 test/
 ├── unit/
-├── extensions/
-│   └── fixtures/                     # saved HTML/JSON; extension tests hit these
+├── extensions/fixtures/              # saved index.min.json and index.pb payloads
 └── integration/
 ```
 
@@ -165,254 +217,276 @@ test/
 
 ## 5. Extension system
 
-This is the heart of the app. Design it first, and design it so an Aniyomi-style source is
-a mechanical port.
+This is the heart of the app and by far the riskiest part. Build it first (§14 Phase 0).
 
-### 5.1 Guiding principle — the host does all I/O
+### 5.1 What an Aniyomi extension actually is
 
-Extensions **cannot** open sockets, touch the filesystem, or import modules. They receive
-a bridge object and call it. Everything an extension does goes through Dart, which means:
+A separate Android application package containing compiled Kotlin. It is **not** a script,
+not a bundle, and not something the app can parse. It declares itself in its manifest with
+metadata the host queries for, and it links against an `extensions-lib` API that the
+extension itself does **not** ship — the library is `compileOnly` at extension build time,
+so **the host must provide those exact classes at runtime**.
 
-- You control headers, user-agent, timeouts, retries, and caching in one place
-- You can log and show the user exactly which URLs were requested
-- A malicious extension has a small, auditable attack surface
-- Extensions stay short and are mostly parsing logic
+That last sentence is the whole design constraint. Get it wrong and every extension throws
+`NoClassDefFoundError`.
 
-### 5.2 Repository index format
+### 5.2 The compatibility shim
 
-A repository is a single JSON file at a user-supplied URL. The app ships **no** default URLs.
+The host must supply the Aniyomi anime extension API under its original package names.
+**VERIFY every name below against the extensions-lib version you are targeting** — these are
+recalled, not confirmed, and the API has versioned over time.
 
-```json
-{
-  "specVersion": 1,
-  "name": "Example Repo",
-  "extensions": [
-    {
-      "id": "com.example.source.en",
-      "name": "Example Source",
-      "lang": "en",
-      "version": "1.0.0",
-      "apiVersion": 1,
-      "nsfw": false,
-      "iconUrl": "https://.../icon.png",
-      "sourceUrl": "https://.../example_source.js",
-      "sha256": "<hex digest of the .js file>"
-    }
-  ]
-}
-```
+Expected surface, anime side:
 
-- `apiVersion` must match the host's supported version, else refuse to install and say why.
-- `sha256` is verified after download. Mismatch = refuse, do not run.
-- Store the downloaded `.js` under the app support directory keyed by `id@version`.
+- `eu.kanade.tachiyomi.animesource` — `AnimeSource`, `AnimeCatalogueSource`,
+  `ConfigurableAnimeSource`, `AnimeSourceFactory`
+- `eu.kanade.tachiyomi.animesource.online` — `AnimeHttpSource`, `ParsedAnimeHttpSource`
+- `eu.kanade.tachiyomi.animesource.model` — `SAnime`, `SEpisode`, `Video`, `Track`,
+  `AnimeFilter`, `AnimeFilterList`, `AnimesPage`
+- `eu.kanade.tachiyomi.network` — `NetworkHelper`, `GET`, `POST`, `asObservableSuccess`,
+  interceptor plumbing
+- `eu.kanade.tachiyomi.util` — `asJsoup` and related response extensions
+- `uy.kohesive.injekt` — `Injekt`, `injectLazy`, `get()`. Extensions use this to obtain
+  `NetworkHelper` and `SharedPreferences`; the host must register both before any source
+  class is instantiated.
 
-### 5.3 Extension contract
+**Do not copy Aniyomi's implementation.** Provide the API surface and your own behaviour
+behind it. See §13 for the licensing consequence, which is real and must be honoured.
 
-An extension is one JS file that assigns a factory to a well-known global. Keep it simple —
-no ES modules, no bundler required.
+Record the `extensions-lib` version you target. An extension declares the lib version it
+was built against; refuse anything outside the range you support and say so in the UI
+naming the extension and both versions.
 
-```js
-// example_source.js
-mimasu.register({
-  metadata: {
-    id: "com.example.source.en",
-    name: "Example Source",
-    lang: "en",
-    baseUrl: "https://example.test",
-    apiVersion: 1,
-    nsfw: false,
-  },
+### 5.3 Discovery and loading
 
-  // All methods are async and return plain JSON-serialisable objects.
+Follow the approach Aniyomi and Mihon use:
 
-  async getPopular(page) { /* → { items: [SAnime], hasNextPage: bool } */ },
-  async getLatestUpdates(page) { /* → { items: [SAnime], hasNextPage: bool } */ },
-  async search(query, page, filters) { /* → { items: [SAnime], hasNextPage: bool } */ },
-  async getDetail(url) { /* → SAnime (full) */ },
-  async getEpisodeList(url) { /* → [SEpisode] */ },
-  async getVideoList(episodeUrl) { /* → [Video] */ },
+1. Query `PackageManager` for installed packages declaring the anime-extension feature.
+   **VERIFY** the exact feature name and metadata keys — expect something in the shape of
+   `tachiyomi.animeextension` with metadata giving the source class list, an NSFW flag, and
+   the lib version.
+2. For each match, build a class loader over the package's APK path
+   (`PathClassLoader(apkPath, parentClassLoader)`).
+3. Instantiate each declared class and cast to `AnimeSource` or `AnimeSourceFactory`.
+   A factory yields several sources — usually one per language.
+4. Register the resulting instances in `SourceRegistry` keyed by source id.
 
-  getFilterList() { /* → [Filter] — sync, describes the search UI */ },
-  getPreferences() { /* → [PreferenceItem] — sync, describes the settings UI */ },
-});
-```
+Notes that will bite you:
 
-**Wire shapes** (these map 1:1 onto domain entities in `domain/entities/source/`):
+- Loading DEX from an arbitrary downloaded file is restricted on modern Android. The
+  supported path is what Aniyomi does: the extension is genuinely **installed as a package**
+  and loaded from its installed APK. Do not attempt to load an un-installed APK.
+- One class loader per extension, discarded when the extension is disabled or removed.
+- Source instantiation runs extension code. Treat it as fallible; a throwing constructor
+  must surface as a typed failure naming the extension, never a crash.
 
-```ts
-SAnime    { url, title, thumbnailUrl?, description?, author?, status?,
-            genres?: string[], episodes?: SEpisode[] }
-SEpisode  { url, name, episodeNumber?: number, dateUpload?: number, scanlator? }
-Video     { url, title, quality, videoUrl, headers?: Headers,
-            audioTracks?: Track[], subtitleTracks?: Track[],
-            bitrate?: number, resolution?: number }
-Track     { url, label }
-Headers   { <string>: <string> }
-Filter    { type: "select"|"text"|"checkbox"|"group", key, label, values? }
-PreferenceItem
-          { type: "select"|"text"|"switch", key, title, summary?, default?, values? }
-```
+### 5.4 Installing
 
-`Video` is a plain Dart class with `fromJson`/`toJson` and no knowledge of where it came
-from — that is what lets the player and the UI stay independent of the extension runtime.
+1. Download the APK from the URL the repository index gave, over `dio`, into app storage.
+2. Check the signing certificate before offering to install (§5.5).
+3. Hand off to the system package installer via intent. The app needs
+   `REQUEST_INSTALL_PACKAGES`, and the user must allow installs from Mimasu once, at OS level.
+4. Observe the install result, then re-run discovery.
 
-### 5.4 The bridge API exposed to JS
+The UI for this is drawn: the Extensions screen, the untrusted prompt, and step 3 of the
+add-a-source guide all describe exactly this flow, including the OS installer appearing.
 
-Install these on the `mimasu` global before evaluating extension code:
+### 5.5 Trust
 
-```js
-// Network — all requests go through Dart's dio client
-mimasu.http.get(url, { headers, params })    → Promise<{ status, body, headers, finalUrl }>
-mimasu.http.post(url, { headers, body, form })→ Promise<{ status, body, headers, finalUrl }>
+- Read the APK's signing certificate and compute its fingerprint.
+- Compare against the set of keys the user has already trusted. Mimasu ships **no**
+  pre-trusted keys, because it endorses no repository.
+- Unknown key → the extension is installed in an **untrusted** state and must not be loaded
+  or instantiated until the user explicitly approves it.
+- The prompt must show package name, version, key fingerprint and originating repository,
+  and must say plainly that extensions run as real Android code with their own network
+  access. The designed dialog does this; keep its wording.
+- Trust is per key, revocable in settings. Revoking unloads every extension under that key.
 
-// HTML — parsing happens in Dart (package:html); JS gets handles and strings
-mimasu.html.parse(htmlString)                → docHandle
-mimasu.html.select(handle, cssSelector)      → [nodeHandle]
-mimasu.html.selectFirst(handle, cssSelector) → nodeHandle | null
-mimasu.html.text(nodeHandle)                 → string
-mimasu.html.attr(nodeHandle, name)           → string | null
-mimasu.html.html(nodeHandle)                 → string
-mimasu.html.release(handle)                  → void   // free the Dart-side node
+### 5.6 Preferences
 
-// Utilities
-mimasu.json.parse / mimasu.json.stringify
-mimasu.crypto.md5(s) / sha256(s) / base64Encode(s) / base64Decode(s)
-mimasu.prefs.get(key) / mimasu.prefs.set(key, value)   // scoped per extension id
-mimasu.log(level, message)
-```
+`ConfigurableAnimeSource` exposes `setupPreferenceScreen(screen)`, into which an extension
+adds androidx `Preference` objects — typically list, switch and text preferences.
 
-Handles are integer keys into a per-extension Dart-side map. **Free them**: give every
-extension invocation a scope and drop the whole map when the call returns, so a leaky
-extension cannot grow memory without bound.
+The host provides its own `PreferenceScreen` implementation that **records** what the
+extension adds rather than rendering it, and exposes the result as serializable descriptors
+(`key`, `type`, `title`, `summary`, `default`, `entries`). Flutter renders them; values are
+written back into the `SharedPreferences` instance that extension was given via Injekt,
+namespaced per extension.
 
-### 5.5 Sandboxing and safety requirements
+This is fiddly and easy to get subtly wrong. **VERIFY** the preference classes an extension
+actually constructs before designing the descriptor type.
 
-These are requirements, not suggestions:
+### 5.7 Request logging
 
-1. **One runtime instance per extension**, disposed when the extension is disabled.
-2. **Wall-clock timeout per call** (default 30s). On timeout, kill the runtime and surface
-   an error naming the extension.
-3. **No ambient globals**: remove or stub anything the runtime exposes by default that
-   touches I/O. QuickJS is already minimal — verify what `flutter_qjs` injects.
-4. **Domain logging**: record every host that an extension requested, and show it in the
-   extension's detail screen. Users should be able to see what a source is talking to.
-5. **Never `eval` a repo index.** It is JSON; parse it as JSON.
-6. **Verify `sha256`** before first execution and on every update.
-7. **Errors are values.** An extension throwing must surface as a typed failure in the
-   cubit state and a readable message in the UI — never a crash, never a silent empty list.
+Register an interceptor on the `NetworkHelper` OkHttp client the host hands to extensions,
+and record host, method, status and timing per extension. Surface it in the extension's
+settings screen.
 
-### 5.6 Swappable runtime interface
+State the limitation in the UI: an extension that constructs its own client is not covered.
+The designed copy already says "useful rather than complete" — do not upgrade that claim.
 
-```dart
-abstract class JsRuntime {
-  Future<void> initialize();
-  Future<void> evaluate(String code, {String? name});
-  Future<Object?> callMethod(String method, List<Object?> args);
-  void registerHostFunction(String name, Future<Object?> Function(List<Object?>) fn);
-  Future<void> dispose();
-}
-```
+### 5.8 Failure handling
 
-`flutter_qjs`'s maintenance status is the single largest third-party risk in this project.
-Everything else in the app must talk to `JsRuntime` only, so replacing QuickJS with
-`flutter_js`, a WebView-based runtime, or a Rust/JNI engine is a one-file change.
+Errors are values. An extension that throws, hangs, or returns nonsense must surface as a
+typed failure in the cubit state, with a readable message naming the extension and the call.
+Never a crash, never a silent empty list.
+
+Apply a wall-clock timeout per call. The designed error states show a 30-second budget and
+name the failing method — `getEpisodeList · timed out at 30s` — so keep that shape.
 
 ---
 
-## 6. Metadata layer (AniList)
+## 6. Repository index formats
 
-- GraphQL over `dio`, documents as string constants under `core/services/api/graphql/queries/`.
-- Queries needed: trending/popular/seasonal lists, search with filters, media details
-  (+characters, +recommendations), airing schedule, user lists, list-entry mutations.
-- DTOs in `data/`, mapped to `domain/entities/media/` at the repository boundary. DTOs must
-  never escape `data/`.
-- Cache list responses in Hive with a TTL; the app should open to content offline.
+A repository is a file at a user-supplied URL listing the extensions it offers. The app
+ships **no** default URLs.
 
-**Metadata and content are independent.** AniList gives titles, art, and episode counts;
-extensions give playable video. Matching between them is by title and episode number and
-will sometimes be wrong — make the chosen source and episode mapping visible and
-user-correctable rather than silently guessing.
+Both formats must be supported, behind one `RepoIndexParser` interface, chosen by sniffing
+the URL and the payload rather than trusting the extension of the filename.
+
+### 6.1 `index.min.json`
+
+The long-standing format. A JSON array of extension entries. Expected fields per entry —
+**VERIFY against a real index before writing the model**: `name`, `pkg` (package name),
+`apk` (filename, resolved relative to the index URL), `lang`, `code` (version code),
+`version`, `nsfw`, and a nested `sources` array carrying each source's `name`, `lang`, `id`
+and `baseUrl`.
+
+Parse it as JSON. Never evaluate it.
+
+### 6.2 `index.pb`
+
+The newer protobuf-encoded index. A known live example, given by the project owner:
+
+```
+https://raw.githubusercontent.com/keiyoushi/extensions/repo/index.pb
+```
+
+Note that this particular repository is **manga** extensions and its sources will not load
+in Mimasu — it is a format reference only. Anime-side repository URLs are needed for
+testing, and finding them is the user's job, not the project's.
+
+**There is no published `.proto` to work from, so derive the schema empirically:**
+
+1. Fetch both `index.min.json` and `index.pb` from the same repository.
+2. Walk the protobuf wire format generically — every field carries a field number and wire
+   type, so the structure can be decoded with no schema at all.
+3. Match decoded values against the JSON entries to establish the field mapping.
+4. Commit both payloads as fixtures and write the decoder against them.
+
+Do not guess the schema and do not hand-write a `.proto` from memory. The derived mapping,
+once confirmed, belongs in `extension-format/schema/` with the fixtures that prove it.
+
+### 6.3 Rules for both
+
+- An entry the app cannot install is a **value, not a parse error**. A manga extension, an
+  unsupported lib version, an unreadable entry — all must appear in the list, marked
+  unsupported, with the reason shown. The Extensions screen has a drawn state for this.
+- Refusing an entry must never fail the whole index.
+- Store the repository URL, its format, and the last fetch time. Re-fetch on demand.
 
 ---
 
-## 7. Auth
+## 7. Library (local)
 
-### 7.1 What to support
-
-AniList OAuth for list sync, plus a fully functional **anonymous mode** — the app must be
-usable with no account at all.
-
-### 7.2 Catching the redirect
-
-Use **App Links / a custom scheme** via `app_links`, registered in `AndroidManifest.xml`.
-Do not follow desktop tutorials that spin up a localhost HTTP server to catch the OAuth
-redirect — that pattern does not belong on Android. Store tokens in
-`flutter_secure_storage`, not Hive.
+- Saved series, watch progress and per-episode resume positions, all in Hive. No sync, no
+  accounts, no network.
+- A library entry records which extension it came from, plus the source's own url/id. If
+  that extension is later removed, the entry must survive and say so rather than vanish.
+- Progress is written on pause and on dispose, keyed by extension id + episode url.
+- Watch state buckets match the designed tabs: Watching, Completed, Planning, Dropped.
 
 ---
 
 ## 8. Playback
 
 - `media_kit` with `media_kit_video`.
-- Pass the `headers` from the extension's `Video` object through to the player; many sources
-  require a `Referer` and will 403 without it.
-- Support: quality switching between returned `Video` entries, audio-track and subtitle-track
-  selection from `Track` lists, external subtitle URLs, seek/skip, playback-speed control.
-- Landscape fullscreen, wakelock while playing (`wakelock_plus`), Android audio focus, PiP.
-- Persist resume position per episode in Hive; write it on pause and on dispose.
-- Sync progress back to AniList when an episode passes a completion threshold (~85%),
-  and let the user turn that off.
+- Pass the `headers` from the extension's `Video` through to the player. Many sources 403
+  without a `Referer`. This is not optional.
+- Support quality switching between returned `Video` entries, audio-track and subtitle-track
+  selection from the returned `Track` lists, external subtitle URLs, seek/skip and speed.
+- Landscape fullscreen, wakelock while playing, Android audio focus, PiP.
+- Resume positions persisted per episode (§7).
+- Playback failure must name the source and the actual HTTP status. The designed error
+  screen shows `Example Source · HTTP 403 · cdn.example.test`; keep that specificity.
 
 ---
 
-## 9. UI
+## 9. Downloads
 
-Mobile-first, built for touch. Do not port desktop layouts.
+New in this revision of the spec, and a phase of its own.
 
-- **Shell**: bottom `NavigationBar` — Home, Library, Search, Settings.
-- **Home**: vertically stacked horizontal carousels (Continue Watching, Trending, Popular
-  This Season, Recently Updated).
-- **Details**: collapsing `SliverAppBar` with banner art, metadata, then a source selector
-  and episode list.
-- **Player**: fullscreen landscape, tap-to-toggle controls, gesture seek and brightness/volume drags.
-- **Extensions**: a screen to add a repo URL, browse that repo's extensions, install/update/
-  remove, and open a per-extension settings page generated from `getPreferences()`.
-
-Design notes:
-
-- Material 3, `useMaterial3: true`, `ColorScheme.fromSeed`, with dynamic color via
-  `dynamic_color` where the device supports it. Support dark and light.
-- Build against `MediaQuery` and `LayoutBuilder`. Do **not** adopt a fixed design size or a
-  scaling package that assumes one; a hardcoded `designSize` is what makes an app
-  structurally unable to render on a phone.
-- Minimum 48dp touch targets. Assume one-handed use: primary actions in the lower half.
-- Every list has explicit loading (skeletons), empty, and error states. Empty states must
-  say what to do next — a fresh install with no extensions should explain that, not show
-  a blank screen.
+- A **Kotlin foreground service** owns the queue and performs the writes. Dart enqueues,
+  cancels, reorders and observes; it does not download.
+- Persist the queue so it survives process death. Resume partial files where the server
+  supports ranges.
+- Downloads use the same `Video` and headers the player would, obtained from the extension.
+- Store under app-specific external storage, laid out by extension → series → episode.
+- Settings, as drawn: location, quality, Wi-Fi-only, and delete-after-watching.
+- The player must prefer a local file when one exists, transparently.
+- Deleting an extension must not orphan its files silently — offer to remove them.
 
 ---
 
-## 10. Storage
+## 10. UI
+
+The screens are already designed. **`docs/design.pen` is the reference; do not re-invent
+layouts.** 23 artboards, 3 reusable components (Status Bar, Poster Card, Nav Bar).
+
+Screens: Onboarding ×3, Home, Search, Library, Anime Details, Player, Extensions, Extension
+Settings, Settings, Downloads, Help & Setup, Guide — Add a Source, Source Picker Sheet,
+Untrusted Extension Prompt, and state variants — Home Loading, Search No Results, Library
+Empty, Extensions Empty, Anime Details No Source, Anime Details Source Failed, Player
+Playback Error.
+
+Design system, as defined in the file's variables:
+
+- Dark only. `ground #08090B`, `surface #121418`, `surfaceRaised #1A1D23`, `outline #2A2E36`,
+  text `#F2F3F5` / `#9BA1AC` / `#6B7280`, accent `#FF5E5B`.
+- A light theme is **not designed**. Derive one from `ColorScheme.fromSeed` if you ship one.
+- Roboto Flex. Four sizes in practice: 28 / 20 / 15 / 13.
+- No drop shadows; separation comes from surface steps plus hairline outlines. The only
+  gradients are the Details banner scrim and the player control scrim, both functional.
+- 48dp minimum touch targets, 16dp gutters, 8dp poster radius, 12dp card radius.
+- Material 3 `NavigationBar`, flush to the bottom with a pill indicator — **not** the
+  floating capsule bar the pen.dev mobile guide suggests.
+- Build against `MediaQuery` and `LayoutBuilder`. Never adopt a fixed `designSize`; that is
+  what makes an app structurally unable to render on a phone.
+- Every list needs its loading, empty and error state. They are drawn. Use them.
+
+### First-run
+
+Onboarding is three screens and leads with what the app does, not what it lacks. It must
+still make clear that a source is required before anything plays — otherwise a user reaches
+Details and hits a dead end with no explanation. The Details no-source state is the backstop
+for anyone who skips onboarding.
+
+---
+
+## 11. Storage
 
 | Data | Where |
 |---|---|
-| OAuth tokens | `flutter_secure_storage` |
-| User settings, extension repo URLs | Hive |
-| Installed extension metadata | Hive |
-| Extension `.js` files | App support dir, `extensions/<id>@<version>.js` |
-| Per-extension preferences | Hive, namespaced by extension id |
-| Metadata cache, resume positions | Hive, with TTL |
+| Repository URLs, format, fetch times | Hive |
+| Installed extension metadata, trust state, trusted keys | Hive |
+| Per-extension preferences | Android `SharedPreferences`, namespaced per extension |
+| Library entries, watch progress, resume positions | Hive |
+| Download queue | Native, persisted; mirrored to Dart for display |
+| Downloaded video files | App-specific external storage |
+| Extension APKs | Installed as packages by the OS; the app keeps no copy |
+
+There is nothing to keep in a keystore, because there are no tokens.
 
 ---
 
-## 11. Build and CI
+## 12. Build and CI
 
 The distribution model is **source only; users fork and build**.
 
-### Local build
-
 ```sh
 flutter pub get
+dart run pigeon --input pigeons/host_api.dart
 dart run build_runner build --delete-conflicting-outputs
 flutter build apk --release --split-per-abi
 ```
@@ -421,119 +495,140 @@ flutter build apk --release --split-per-abi
 
 ### CI (`.github/workflows/build.yml`)
 
-- Triggers: `workflow_dispatch` and `push: tags` — so it runs in **the forker's** repo.
-- Steps: checkout → set up JDK 17 → set up Flutter (pinned) → `pub get` → `build_runner`
-  → `flutter analyze` → `flutter test` → `flutter build apk --release --split-per-abi`.
-- Publish the APKs as **workflow artifacts**, not as a release on the upstream repo.
-- **No signing keystore in the repository.** Debug signing by default. Document the
-  optional path: a forker adds `KEYSTORE_BASE64`, `KEYSTORE_PASSWORD`, `KEY_ALIAS`,
-  `KEY_PASSWORD` as repo secrets and CI decodes them into `android/key.properties`.
-  Note in the docs that changing keystore breaks in-place upgrades.
-- Keep a `flutter analyze` gate at zero warnings from the first commit. It is far cheaper
-  to hold that line than to reclaim it later.
+- Triggers: `workflow_dispatch` and `push: tags`, so it runs in **the forker's** repo.
+- Steps: checkout → JDK 17 → Flutter (pinned) → `pub get` → pigeon → `build_runner` →
+  `flutter analyze` → `flutter test` → Kotlin unit tests → `flutter build apk --release
+  --split-per-abi`.
+- Publish APKs as **workflow artifacts**, never as a release on the upstream repo.
+- **No signing keystore in the repository.** Debug signing by default. Document the optional
+  path: a forker adds `KEYSTORE_BASE64`, `KEYSTORE_PASSWORD`, `KEY_ALIAS`, `KEY_PASSWORD` as
+  secrets and CI decodes them into `android/key.properties`. Changing keystore breaks
+  in-place upgrades.
+- Hold `flutter analyze` at zero warnings from the first commit.
 
 ---
 
-## 12. Write everything from scratch
+## 13. Write from scratch — and the one honest exception
 
-**No code is copied from any other project.** Mimasu is written fresh. There is no
-reference checkout to seed from, and none is needed — the app's scope is anime metadata
-plus a JS extension host, which is far narrower than any existing client.
+**No code is copied from any other project.** Mimasu is written fresh.
 
-Sources of truth to work from, rather than code to copy:
+There is, however, an unavoidable exception that the earlier draft of this spec did not
+anticipate. The compatibility shim in §5.2 **must reproduce Aniyomi's `extensions-lib` API
+surface** — the same package names, class names and method signatures — or no extension will
+load. That is interface compatibility, not copied implementation, but it is not "nothing
+borrowed" either.
 
-- **AniList GraphQL API** — <https://docs.anilist.co>. Its docs and interactive explorer
-  are the authority. Write only the queries the screens in §9 actually need; expect around
-  half a dozen documents, not a general-purpose client.
-- **Aniyomi / Mangayomi** — useful as *conceptual* references for what an extension API has
-  to expose (filters, preferences, the popular/latest/search/detail/episodes/video shape).
-  Read them to understand the problem, then design §5 on its own terms.
+Consequences to honour:
 
-Two design mistakes are worth naming, because they are easy to repeat and expensive to
-undo. Both come from having examined an existing desktop client:
+- Aniyomi and its extensions library are Apache-2.0. Ship a `NOTICE` file with proper
+  attribution, and state the compatibility relationship in the README.
+- Reproduce **signatures only**. Behaviour behind them is ours.
+- Mimasu is not affiliated with, endorsed by, or a fork of Aniyomi or Mihon. Say so.
 
-1. **Runtime types leaking upward.** Keeping JNI/JS types in state classes welds the app to
-   one content backend and makes it unswappable. See the hard rule in §3.
-2. **A fixed design size.** Hardcoding `designSize: Size(1280, 720)` and a minimum window
-   size makes an app structurally unable to render on a phone. See §9.
+Sources of truth to work from rather than code to copy: the Aniyomi extensions-lib API as
+published, a real extension APK's manifest and class list, and a real repository index in
+both formats.
+
+Two design mistakes worth naming, because they are easy to repeat and expensive to undo:
+
+1. **Runtime types leaking upward.** Keeping platform-channel or host types in state classes
+   welds the app to one content backend. See the hard rule in §3.
+2. **A fixed design size.** Hardcoding a `designSize` makes an app structurally unable to
+   render on a phone. See §10.
 
 ---
 
-## 13. Implementation order
+## 14. Implementation order
 
 Each phase ends with something runnable on a device. Do not start a phase before the
 previous one runs.
 
-**Phase 0 — Toolchain spike (do this first, it is the riskiest unknown)**
-Scaffold a bare Flutter Android app, add `flutter_qjs`, and prove you can: evaluate JS,
-call a JS async function from Dart, and have that JS call back into a registered Dart
-function. Pin the JDK. If `flutter_qjs` does not build or is abandoned, evaluate
-`flutter_js` or a WebView runtime **now** — this decision blocks everything in §5.
-Output: a throwaway spike plus a written note of what worked.
+**Phase 0 — Extension host spike. Do this first; it is the riskiest unknown and it gates
+everything.**
+In a bare Flutter Android app with a Kotlin host, prove end to end that you can: install a
+**real Aniyomi anime extension APK**, discover it through `PackageManager`, provide enough of
+the §5.2 shim for its classes to resolve, instantiate a source, call its popular-anime
+method, and return the parsed result to Dart over Pigeon.
+If the shim surface turns out to be larger than expected, or the lib version you target has
+moved, find out now. Output: a throwaway spike plus a written note of the exact class list,
+metadata keys and lib version that actually worked. **Everything in §5 depends on this.**
 
-**Phase 1 — Scaffold + metadata**
-Project structure, DI, routing, theme, Hive, dio. AniList browse/search/details. Bottom-nav
-shell, home carousels, details screen. Anonymous mode only.
-*Done when:* an APK installs and you can browse and search real anime metadata.
+**Phase 1 — Scaffold + extension management**
+Project structure, DI, routing, theme from §10, Hive, dio, Pigeon wiring. Repository add in
+both formats (§6), extension list, install via installer intent, the trust prompt, and
+enable/disable/remove. Onboarding.
+*Done when:* you can paste a real anime repository URL, install an extension, trust it, and
+see it listed as enabled.
 
-**Phase 2 — Extension infrastructure**
-`JsRuntime`, the bridge (§5.4), extension manager and loader, repo-index parsing with
-sha256 verification, the extensions UI. The example extension (§14) plus fixture-based tests.
-*Done when:* you can add a repo URL, install the example extension, and call `getPopular`
-against local fixtures.
+**Phase 2 — Browse through extensions**
+`ContentSourceRepository` over the host. Home with source switcher, popular and latest,
+search with the extension's filters, details, episode list. The no-source and source-failed
+states.
+*Done when:* an installed extension populates Home and a real episode list.
 
-**Phase 3 — Content through extensions**
-`ContentSourceRepository` backed by JS. Source selector on the details screen, episode lists,
-title/episode matching against AniList metadata.
-*Done when:* an installed extension populates a real episode list.
-
-**Phase 4 — Playback**
-`media_kit` player, headers passthrough, quality/audio/subtitle selection, resume positions.
+**Phase 3 — Playback**
+`media_kit`, headers passthrough, quality/audio/subtitle selection, resume positions, the
+playback error state.
 *Done when:* an episode plays start to finish with a subtitle track selected.
 
-**Phase 5 — Accounts and library**
-AniList OAuth over App Links, secure token storage, library screen, progress sync.
+**Phase 4 — Downloads**
+The Kotlin foreground service, queue persistence, the Downloads screen, offline playback,
+download settings.
+*Done when:* an episode downloads, survives a process kill, and plays with no network.
+
+**Phase 5 — Library and preferences**
+Local library and progress, the four watch buckets, per-extension preferences from §5.6, and
+the per-extension request log.
 
 **Phase 6 — Polish and pipeline**
-Extension preferences UI, per-extension request log, calendar, settings, error states,
-the CI workflow of §11, and the docs of §14.
+Help & Setup and the guides, error and empty states throughout, the CI workflow of §12, the
+docs of §15, and a `NOTICE` file per §13.
 
 ---
 
-## 14. Documentation to write
+## 15. Documentation to write
 
-- **`README.md`** — what the app is, the no-content stance, fork-and-build instructions,
-  how extensions work, disclaimer, and credits.
-- **`extensions-spec/README.md`** — the extension authoring guide: the full contract from
-  §5.3, the bridge API from §5.4, the repo index format from §5.2, versioning rules, and a
-  walkthrough of the example extension.
-- **`extensions-spec/example/example_source.js`** — a complete, working extension that
-  parses the HTML fixtures in `test/extensions/fixtures/`. It must not target a real site;
-  its job is to document the API and to be the test subject.
+- **`README.md`** — what the app is, that it ships no content and no sources, fork-and-build
+  instructions, how extensions work including the honest security posture, the Aniyomi
+  compatibility statement, disclaimer and credits.
+- **`extension-format/README.md`** — which extension format Mimasu loads and which it does
+  not, both repository index formats, the trust model, the lib version supported, and what
+  makes an extension appear as unsupported.
+- **`NOTICE`** — Apache-2.0 attribution per §13.
 
 ---
 
-## 15. Testing
+## 16. Testing
 
-- **Unit**: entity mapping, title/episode matching, repo-index parsing (including malformed
-  input and sha256 mismatch), each bridge function.
-- **Extension harness**: run `example_source.js` against saved fixtures and assert the parsed
-  entities. This is the regression suite for the bridge and the contract — it must not
-  require network access.
-- **Cubit tests**: `bloc_test`, with `mocktail` repositories. Cover the failure paths
-  explicitly: extension throws, extension times out, network down, empty results.
+- **Unit**: entity mapping, both repo index parsers (including malformed input, a manga
+  entry, an unsupported lib version, and a truncated protobuf), trust-state transitions,
+  download queue state machine.
+- **Index fixtures**: real `index.min.json` and `index.pb` payloads committed under
+  `test/extensions/fixtures/`. These are the regression suite for §6 and must not require
+  network access.
+- **Kotlin host tests**: signature fingerprinting, metadata parsing, and the preference
+  collector, against a checked-in test APK if one can be built.
+- **Cubit tests**: `bloc_test` with `mocktail` repositories, no Android host present. Cover
+  the failure paths explicitly: extension throws, extension times out, no extension
+  installed, untrusted extension, network down, empty results.
 - **Widget tests**: loading / empty / error states for the main screens.
-- Name test files `*_test.dart`. Without the suffix `flutter test` silently collects
-  nothing and the suite passes while testing zero code.
+- Name test files `*_test.dart`. Without the suffix `flutter test` silently collects nothing
+  and the suite passes while testing zero code.
 
 ---
 
-## 16. Open decisions
+## 17. Open decisions
 
-Flag these to the project owner rather than guessing:
-
-1. **`flutter_qjs` viability** — resolve in Phase 0. Blocks §5.
-2. **`media_kit` vs `video_player`** — feature coverage against APK size. Defer to Phase 4;
-   the `JsRuntime`-style separation is not needed here since `Video` entities are player-agnostic.
-3. **Manga support** — out of scope for v1, but decide whether `ContentSourceRepository` should
-   be generic over media type now, or be split later.
+1. **The exact `extensions-lib` surface and version to target.** Resolve in Phase 0. Blocks
+   all of §5. This has replaced the old JavaScript-runtime question as the project's single
+   largest risk.
+2. **Anime repository URLs for testing.** The project ships and recommends none, but
+   development needs at least one real anime-side repository in each index format. Sourcing
+   these is the owner's call, not the app's.
+3. **`index.pb` schema**, to be derived per §6.2 and then frozen with fixtures.
+4. **RxJava vs coroutines** in the shim — depends on the lib version from decision 1.
+   Supporting both is likely.
+5. **Tracker support** (AniList/MAL) is out of scope for v1. Decide later whether
+   `LibraryRepository` should be shaped for it now or split when it arrives.
+6. **`media_kit` vs `video_player`** — feature coverage against APK size. Defer to Phase 3;
+   `Video` entities are player-agnostic either way.
