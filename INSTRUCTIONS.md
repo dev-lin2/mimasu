@@ -345,40 +345,69 @@ ships **no** default URLs.
 Both formats must be supported, behind one `RepoIndexParser` interface, chosen by sniffing
 the URL and the payload rather than trusting the extension of the filename.
 
-### 6.1 `index.min.json`
+Both are gzip-compressed in practice. Sniff the `1f 8b` magic and inflate before parsing;
+do not rely on `Content-Encoding`.
 
-The long-standing format. A JSON array of extension entries. Expected fields per entry —
-**VERIFY against a real index before writing the model**: `name`, `pkg` (package name),
-`apk` (filename, resolved relative to the index URL), `lang`, `code` (version code),
-`version`, `nsfw`, and a nested `sources` array carrying each source's `name`, `lang`, `id`
-and `baseUrl`.
+### 6.1 `index.min.json` — CONFIRMED
+
+The long-standing format. A JSON array of extension entries. Fields per entry, now
+confirmed against a real index: `name`, `pkg` (package name), `apk` (filename, resolved
+relative to the index URL), `lang`, `code` (version code), `version`, `nsfw`, and a nested
+`sources` array carrying each source's `name`, `lang`, `id` and `baseUrl`.
 
 Parse it as JSON. Never evaluate it.
 
-### 6.2 `index.pb`
+**This format is being abandoned, and that has a consequence.** At least one major
+repository has migrated to `index.pb` and left `index.min.json` as a 765-byte stub holding
+two placeholder entries whose only purpose is to tell old clients to upgrade. A client that
+reads only the JSON index sees two fake extensions and no catalogue.
 
-The newer protobuf-encoded index. A known live example, given by the project owner:
+So: **where a repository offers both, prefer `index.pb`.** Treat a JSON index of one or two
+entries whose names look like upgrade notices as a signal that the real catalogue is
+elsewhere, and say so in the UI rather than showing the stub as if it were content.
 
-```
-https://raw.githubusercontent.com/keiyoushi/extensions/repo/index.pb
-```
+### 6.2 `index.pb` — schema recovered
 
-Note that this particular repository is **manga** extensions and its sources will not load
-in Mimasu — it is a format reference only. Anime-side repository URLs are needed for
-testing, and finding them is the user's job, not the project's.
+The newer protobuf-encoded index, and now the primary format.
 
-**There is no published `.proto` to work from, so derive the schema empirically:**
+**The schema is documented in
+[`extension-format/schema/index-pb.md`](extension-format/schema/index-pb.md)**, recovered
+by walking the wire format of a real payload rather than guessed. That file carries the
+field numbers, the evidence for each, the two fields still unconfirmed, and the provenance
+of the fixture. Read it before touching the parser.
 
-1. Fetch both `index.min.json` and `index.pb` from the same repository.
-2. Walk the protobuf wire format generically — every field carries a field number and wire
-   type, so the structure can be decoded with no schema at all.
-3. Match decoded values against the JSON entries to establish the field mapping.
-4. Commit both payloads as fixtures and write the decoder against them.
+Implementation: `lib/extensions/repo/`. The reader works by field number and skips unknown
+fields, so a repository adding fields cannot break it. No `.proto` and no protobuf code
+generation is involved.
 
-Do not guess the schema and do not hand-write a `.proto` from memory. The derived mapping,
-once confirmed, belongs in `extension-format/schema/` with the fixtures that prove it.
+Highlights worth knowing without opening that file:
 
-### 6.3 Rules for both
+- The index declares each extension's **`extensions-lib` version**, which is the
+  compatibility gate §5.2 needs — no need to read it out of the APK manifest.
+- It declares the repository's **signing key SHA-256**. That is a convenience for the trust
+  prompt and never a substitute for fingerprinting the downloaded APK (§5.5).
+- **One extension commonly exposes many sources** — one observed extension declares 27, one
+  per language. Any UI assuming one source per extension is wrong.
+- `versionCode` encodes the lib version alongside the patch level (`1.6.4` → `106004`), so
+  it is not an opaque counter across lib versions.
+
+The reference payload came from `keiyoushi/extensions`, which is a **manga** repository —
+a format reference only, since none of its extensions can run here. An anime-side payload
+is still needed to confirm the last two fields and to exercise §5.
+
+### 6.3 The media-kind problem
+
+**Neither index format carries a media type.** Nothing in the payload says whether an
+extension serves anime or manga. The only available signal is the package name:
+
+- `eu.kanade.tachiyomi.animeextension.*` → anime, loadable
+- `eu.kanade.tachiyomi.extension.*` → manga, refuse
+- anything else → unrecognised, refuse
+
+This is implemented as `ExtensionMediaKind.fromPackage`. **VERIFY the anime prefix against
+a real anime repository** — the manga prefix is confirmed, the anime one is not.
+
+### 6.4 Rules for both
 
 - An entry the app cannot install is a **value, not a parse error**. A manga extension, an
   unsupported lib version, an unreadable entry — all must appear in the list, marked
@@ -625,7 +654,12 @@ docs of §15, and a `NOTICE` file per §13.
 2. **Anime repository URLs for testing.** The project ships and recommends none, but
    development needs at least one real anime-side repository in each index format. Sourcing
    these is the owner's call, not the app's.
-3. **`index.pb` schema**, to be derived per §6.2 and then frozen with fixtures.
+3. ~~**`index.pb` schema**, to be derived per §6.2 and then frozen with fixtures.~~
+   **Resolved.** Recovered and documented in
+   [`extension-format/schema/index-pb.md`](extension-format/schema/index-pb.md), with the
+   payload frozen as a fixture and 23 parser tests over it. Two fields remain unconfirmed —
+   `content_rating` and `alt_base_url` — both recorded raw with no behaviour depending on
+   them, resolvable against an anime repository that publishes both formats.
 4. **RxJava vs coroutines** in the shim — depends on the lib version from decision 1.
    Supporting both is likely.
 5. **Tracker support** (AniList/MAL) is out of scope for v1. Decide later whether
