@@ -4,8 +4,8 @@ import 'package:pigeon/pigeon.dart';
   PigeonOptions(
     dartOut: 'lib/extensions/host/host_api.g.dart',
     kotlinOut:
-        'android/app/src/main/kotlin/sg/heysara/mimasu/host/HostApi.g.kt',
-    kotlinOptions: KotlinOptions(package: 'sg.heysara.mimasu.host'),
+        'android/app/src/main/kotlin/com/handypick/mimasu/host/HostApi.g.kt',
+    kotlinOptions: KotlinOptions(package: 'com.handypick.mimasu.host'),
     dartPackageName: 'mimasu',
   ),
 )

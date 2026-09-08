@@ -2,7 +2,7 @@
 // See also: https://pub.dev/packages/pigeon
 @file:Suppress("UNCHECKED_CAST", "ArrayInDataClass")
 
-package sg.heysara.mimasu.host
+package com.handypick.mimasu.host
 
 import android.util.Log
 import io.flutter.plugin.common.BasicMessageChannel

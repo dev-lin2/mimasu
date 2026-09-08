@@ -1,4 +1,4 @@
-package sg.heysara.mimasu.host
+package com.handypick.mimasu.host
 
 import android.content.Context
 import android.content.pm.PackageInfo

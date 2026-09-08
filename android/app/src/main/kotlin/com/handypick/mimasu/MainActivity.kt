@@ -1,9 +1,9 @@
-package sg.heysara.mimasu
+package com.handypick.mimasu
 
 import io.flutter.embedding.android.FlutterActivity
 import io.flutter.embedding.engine.FlutterEngine
-import sg.heysara.mimasu.host.ExtensionHostApi
-import sg.heysara.mimasu.host.ExtensionHostImpl
+import com.handypick.mimasu.host.ExtensionHostApi
+import com.handypick.mimasu.host.ExtensionHostImpl
 
 class MainActivity : FlutterActivity() {
     override fun configureFlutterEngine(flutterEngine: FlutterEngine) {
