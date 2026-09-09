@@ -133,6 +133,58 @@ data class ExtensionCandidate (
 }
 
 /**
+ * A source instance the host managed to load, interrogated through the
+ * shim interfaces.
+ *
+ * Generated class from Pigeon that represents data sent in messages.
+ */
+data class LoadedSource (
+  val className: String,
+  val ok: Boolean,
+  /** 64-bit, so carried as a string. */
+  val sourceId: String,
+  val name: String,
+  val lang: String,
+  val baseUrl: String,
+  val supportsLatest: Boolean,
+  val configurable: Boolean,
+  /** How many filters the source declares for its search UI. */
+  val filterCount: Long,
+  val error: String? = null
+)
+ {
+  companion object {
+    fun fromList(pigeonVar_list: List<Any?>): LoadedSource {
+      val className = pigeonVar_list[0] as String
+      val ok = pigeonVar_list[1] as Boolean
+      val sourceId = pigeonVar_list[2] as String
+      val name = pigeonVar_list[3] as String
+      val lang = pigeonVar_list[4] as String
+      val baseUrl = pigeonVar_list[5] as String
+      val supportsLatest = pigeonVar_list[6] as Boolean
+      val configurable = pigeonVar_list[7] as Boolean
+      val filterCount = pigeonVar_list[8] as Long
+      val error = pigeonVar_list[9] as String?
+      return LoadedSource(className, ok, sourceId, name, lang, baseUrl, supportsLatest, configurable, filterCount, error)
+    }
+  }
+  fun toList(): List<Any?> {
+    return listOf(
+      className,
+      ok,
+      sourceId,
+      name,
+      lang,
+      baseUrl,
+      supportsLatest,
+      configurable,
+      filterCount,
+      error,
+    )
+  }
+}
+
+/**
  * The result of attempting to load one class out of an extension APK.
  * Failures are values, not exceptions (INSTRUCTIONS.md 5.8).
  *
@@ -191,6 +243,11 @@ private open class HostApiPigeonCodec : StandardMessageCodec() {
       }
       131.toByte() -> {
         return (readValue(buffer) as? List<Any?>)?.let {
+          LoadedSource.fromList(it)
+        }
+      }
+      132.toByte() -> {
+        return (readValue(buffer) as? List<Any?>)?.let {
           ClassProbeResult.fromList(it)
         }
       }
@@ -207,8 +264,12 @@ private open class HostApiPigeonCodec : StandardMessageCodec() {
         stream.write(130)
         writeValue(stream, value.toList())
       }
-      is ClassProbeResult -> {
+      is LoadedSource -> {
         stream.write(131)
+        writeValue(stream, value.toList())
+      }
+      is ClassProbeResult -> {
+        stream.write(132)
         writeValue(stream, value.toList())
       }
       else -> super.writeValue(stream, value)
@@ -235,6 +296,16 @@ interface ExtensionHostApi {
    * if no such screen could be launched.
    */
   fun openInstallPermissionSettings(): Boolean
+  /**
+   * What a successfully loaded source reports about itself. Proves the host
+   * can talk to an extension through the shim, not merely construct it.
+   */
+  fun loadSources(packageName: String, classNames: List<String?>): List<LoadedSource?>
+  /**
+   * Hosts an extension has contacted through the client the host provides.
+   * Best-effort: an extension using its own client is not covered (5.7).
+   */
+  fun requestLogHostCounts(): Map<String?, Long?>
   /**
    * Builds a PathClassLoader over [packageName]'s APK and tries to load each
    * of [classNames], reporting ancestry and errors rather than throwing.
@@ -303,6 +374,39 @@ interface ExtensionHostApi {
           channel.setMessageHandler { _, reply ->
             val wrapped: List<Any?> = try {
               listOf(api.openInstallPermissionSettings())
+            } catch (exception: Throwable) {
+              wrapError(exception)
+            }
+            reply.reply(wrapped)
+          }
+        } else {
+          channel.setMessageHandler(null)
+        }
+      }
+      run {
+        val channel = BasicMessageChannel<Any?>(binaryMessenger, "dev.flutter.pigeon.mimasu.ExtensionHostApi.loadSources$separatedMessageChannelSuffix", codec)
+        if (api != null) {
+          channel.setMessageHandler { message, reply ->
+            val args = message as List<Any?>
+            val packageNameArg = args[0] as String
+            val classNamesArg = args[1] as List<String?>
+            val wrapped: List<Any?> = try {
+              listOf(api.loadSources(packageNameArg, classNamesArg))
+            } catch (exception: Throwable) {
+              wrapError(exception)
+            }
+            reply.reply(wrapped)
+          }
+        } else {
+          channel.setMessageHandler(null)
+        }
+      }
+      run {
+        val channel = BasicMessageChannel<Any?>(binaryMessenger, "dev.flutter.pigeon.mimasu.ExtensionHostApi.requestLogHostCounts$separatedMessageChannelSuffix", codec)
+        if (api != null) {
+          channel.setMessageHandler { _, reply ->
+            val wrapped: List<Any?> = try {
+              listOf(api.requestLogHostCounts())
             } catch (exception: Throwable) {
               wrapError(exception)
             }

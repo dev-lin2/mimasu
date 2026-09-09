@@ -7,6 +7,12 @@ import android.content.pm.PackageManager
 import android.net.Uri
 import android.os.Build
 import android.provider.Settings
+import eu.kanade.tachiyomi.network.RequestLog
+import eu.kanade.tachiyomi.source.CatalogueSource
+import eu.kanade.tachiyomi.source.ConfigurableSource
+import eu.kanade.tachiyomi.source.Source
+import eu.kanade.tachiyomi.source.SourceFactory
+import eu.kanade.tachiyomi.source.online.HttpSource
 import dalvik.system.PathClassLoader
 import java.security.MessageDigest
 
@@ -111,6 +117,106 @@ class ExtensionHostImpl(private val context: Context) : ExtensionHostApi {
         }
     }
 
+    /**
+     * Loads source classes and interrogates them through the shim interfaces.
+     *
+     * The casts below are the point: because the extension's class loader is
+     * parented on ours, the `HttpSource` it extends is *our* `HttpSource`, so
+     * these are ordinary type checks rather than reflection. That type
+     * identity across the loader boundary is what makes the whole design work
+     * (INSTRUCTIONS.md 5.2).
+     */
+    override fun loadSources(
+        packageName: String,
+        classNames: List<String?>,
+    ): List<LoadedSource?> {
+        val wanted = classNames.filterNotNull()
+        if (wanted.isEmpty()) return emptyList()
+
+        ShimRegistry.ensureInitialised(context)
+
+        val apkPath = runCatching {
+            pm.getApplicationInfo(packageName, 0).sourceDir
+        }.getOrNull()
+        if (apkPath.isNullOrEmpty()) {
+            return wanted.map { failedSource(it, "package not installed: $packageName") }
+        }
+
+        val loader = try {
+            PathClassLoader(apkPath, javaClass.classLoader)
+        } catch (t: Throwable) {
+            return wanted.map { failedSource(it, "class loader failed: ${t.describe()}") }
+        }
+
+        val out = mutableListOf<LoadedSource?>()
+        for (className in wanted) {
+            try {
+                val instance = Class.forName(className, false, loader)
+                    .getDeclaredConstructor()
+                    .apply { isAccessible = true }
+                    .newInstance()
+
+                // A factory yields several sources, usually one per language.
+                val sources: List<Any> = when (instance) {
+                    is SourceFactory -> instance.createSources()
+                    else -> listOf(instance)
+                }
+
+                for (source in sources) {
+                    out += describe(className, source)
+                }
+            } catch (t: Throwable) {
+                out += failedSource(className, t.describe())
+            }
+        }
+        return out
+    }
+
+    private fun describe(className: String, source: Any): LoadedSource {
+        val base = source as? Source
+            ?: return failedSource(
+                className,
+                "loaded, but not a Source: ${source.javaClass.name}",
+            )
+
+        val catalogue = source as? CatalogueSource
+        val http = source as? HttpSource
+
+        // Reading these runs extension code, so each is individually guarded:
+        // a source with a throwing getter must not lose the whole result.
+        fun <T> safe(fallback: T, block: () -> T): T =
+            try { block() } catch (_: Throwable) { fallback }
+
+        return LoadedSource(
+            className = className,
+            ok = true,
+            sourceId = safe("") { base.id.toString() },
+            name = safe("") { base.name },
+            lang = safe("") { base.lang },
+            baseUrl = safe("") { http?.baseUrl ?: "" },
+            supportsLatest = safe(false) { catalogue?.supportsLatest ?: false },
+            configurable = source is ConfigurableSource,
+            filterCount = safe(0L) { catalogue?.getFilterList()?.size?.toLong() ?: 0L },
+            error = null,
+        )
+    }
+
+    private fun failedSource(className: String, error: String) = LoadedSource(
+        className = className,
+        ok = false,
+        sourceId = "",
+        name = "",
+        lang = "",
+        baseUrl = "",
+        supportsLatest = false,
+        configurable = false,
+        filterCount = 0,
+        error = error,
+    )
+
+    override fun requestLogHostCounts(): Map<String?, Long?> =
+        RequestLog.hostCounts().mapValues { it.value.toLong() }
+
     override fun probeClasses(
         packageName: String,
         classNames: List<String?>,
@@ -134,8 +240,12 @@ class ExtensionHostImpl(private val context: Context) : ExtensionHostApi {
             }
         }
 
+        // Injekt has to be populated before a source constructor runs, since
+        // that constructor is what asks for NetworkHelper (5.2).
+        ShimRegistry.ensureInitialised(context)
+
         // One class loader per extension, parented on ours so the shim classes
-        // we eventually provide resolve from here (INSTRUCTIONS.md 5.2).
+        // resolve from here (INSTRUCTIONS.md 5.2).
         val loader = try {
             PathClassLoader(apkPath, javaClass.classLoader)
         } catch (t: Throwable) {

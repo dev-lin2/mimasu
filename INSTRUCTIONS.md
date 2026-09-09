@@ -672,11 +672,12 @@ docs of §15, and a `NOTICE` file per §13.
 
 ## 17. Open decisions
 
-1. **Does the anime `extensions-lib` flavour mirror the manga one?** Narrowed by Phase 0:
-   the manga surface is confirmed in [`docs/phase-0-findings.md`](docs/phase-0-findings.md),
-   along with signature verification working end to end. What remains is whether the anime
-   classes mirror it, which one anime extension APK answers. Still the largest risk, but a
-   much smaller question than before.
+1. **Does the anime `extensions-lib` flavour mirror the manga one?** This is now the only
+   part of §5 still unknown. The manga shim is built and **verified working** — real
+   extensions load, instantiate and answer questions through it, and host-derived source ids
+   match the ones repository indexes declare. See the addendum in
+   [`docs/phase-0-findings.md`](docs/phase-0-findings.md). The mechanism is proven; what
+   remains is a set of type names, which one anime extension APK answers.
 2. **Anime repository URLs for testing.** The project ships and recommends none, but
    development needs at least one real anime-side repository in each index format. Sourcing
    these is the owner's call, not the app's.

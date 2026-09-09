@@ -12430,7 +12430,7 @@
                   "fill": "$text-tertiary",
                   "textGrowth": "fixed-width",
                   "width": "fill_container",
-                  "content": "Internal storage · Android/data/sg.heysara.mimasu/files",
+                  "content": "Internal storage · Android/data/com.handypick.mimasu/files",
                   "lineHeight": 1.4,
                   "fontFamily": "$font-body",
                   "fontSize": 11,

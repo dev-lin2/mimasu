@@ -62,6 +62,38 @@ class ExtensionCandidate {
   final String signatureSha256;
 }
 
+/// A source instance the host managed to load, interrogated through the
+/// shim interfaces.
+class LoadedSource {
+  LoadedSource({
+    required this.className,
+    required this.ok,
+    required this.sourceId,
+    required this.name,
+    required this.lang,
+    required this.baseUrl,
+    required this.supportsLatest,
+    required this.configurable,
+    required this.filterCount,
+    required this.error,
+  });
+
+  final String className;
+  final bool ok;
+
+  /// 64-bit, so carried as a string.
+  final String sourceId;
+  final String name;
+  final String lang;
+  final String baseUrl;
+  final bool supportsLatest;
+  final bool configurable;
+
+  /// How many filters the source declares for its search UI.
+  final int filterCount;
+  final String? error;
+}
+
 /// The result of attempting to load one class out of an extension APK.
 /// Failures are values, not exceptions (INSTRUCTIONS.md 5.8).
 class ClassProbeResult {
@@ -106,6 +138,14 @@ abstract class ExtensionHostApi {
   /// Opens the system settings page where that grant is made. Returns false
   /// if no such screen could be launched.
   bool openInstallPermissionSettings();
+
+  /// What a successfully loaded source reports about itself. Proves the host
+  /// can talk to an extension through the shim, not merely construct it.
+  List<LoadedSource?> loadSources(String packageName, List<String?> classNames);
+
+  /// Hosts an extension has contacted through the client the host provides.
+  /// Best-effort: an extension using its own client is not covered (5.7).
+  Map<String?, int?> requestLogHostCounts();
 
   /// Builds a PathClassLoader over [packageName]'s APK and tries to load each
   /// of [classNames], reporting ancestry and errors rather than throwing.

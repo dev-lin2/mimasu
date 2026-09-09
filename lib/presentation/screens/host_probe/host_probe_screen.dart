@@ -21,6 +21,8 @@ class _HostProbeScreenState extends State<HostProbeScreen> {
   HostInfo? _info;
   List<ExtensionCandidate?> _candidates = const [];
   List<ClassProbeResult?> _probes = const [];
+  List<LoadedSource?> _loaded = const [];
+  Map<String?, int?> _hosts = const {};
   String? _error;
   bool _busy = false;
 
@@ -51,6 +53,7 @@ class _HostProbeScreenState extends State<HostProbeScreen> {
       // real extensions; do not go back to scraping every metadata value —
       // that picked up the lib version ("1.6") as a class name.
       final probes = <ClassProbeResult?>[];
+      final loaded = <LoadedSource?>[];
       for (final c in found) {
         if (c == null) continue;
         final classNames = c.metadata.entries
@@ -65,13 +68,19 @@ class _HostProbeScreenState extends State<HostProbeScreen> {
         probes.addAll(
           await _host.probeClasses(c.packageName, classNames.cast<String?>()),
         );
+        loaded.addAll(
+          await _host.loadSources(c.packageName, classNames.cast<String?>()),
+        );
       }
+      final hosts = await _host.requestLogHostCounts();
 
       if (!mounted) return;
       setState(() {
         _info = info;
         _candidates = found;
         _probes = probes;
+        _loaded = loaded;
+        _hosts = hosts;
         _busy = false;
       });
     } catch (e) {
@@ -142,6 +151,39 @@ class _HostProbeScreenState extends State<HostProbeScreen> {
                         .join('\n'),
                   ),
                   ('sha-256', c.signatureSha256),
+                ],
+              ),
+            ],
+            if (_loaded.isNotEmpty) ...[
+              const SizedBox(height: 14),
+              _Card(
+                title: 'Sources loaded through the shim',
+                ok: _loaded.whereType<LoadedSource>().any((s) => s.ok),
+                rows: [
+                  for (final s in _loaded.whereType<LoadedSource>())
+                    (
+                      s.ok ? s.name : s.className.split('.').last,
+                      s.ok
+                          ? [
+                              'id: ${s.sourceId}',
+                              'lang: ${s.lang}',
+                              'baseUrl: ${s.baseUrl}',
+                              'supportsLatest: ${s.supportsLatest}',
+                              'configurable: ${s.configurable}',
+                              'filters: ${s.filterCount}',
+                            ].join('\n')
+                          : 'failed: ${s.error}',
+                    ),
+                ],
+              ),
+            ],
+            if (_hosts.isNotEmpty) ...[
+              const SizedBox(height: 14),
+              _Card(
+                title: 'Hosts contacted',
+                rows: [
+                  for (final e in _hosts.entries)
+                    ('${e.key}', '${e.value} requests'),
                 ],
               ),
             ],

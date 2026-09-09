@@ -119,6 +119,76 @@ class ExtensionCandidate {
   }
 }
 
+/// A source instance the host managed to load, interrogated through the
+/// shim interfaces.
+class LoadedSource {
+  LoadedSource({
+    required this.className,
+    required this.ok,
+    required this.sourceId,
+    required this.name,
+    required this.lang,
+    required this.baseUrl,
+    required this.supportsLatest,
+    required this.configurable,
+    required this.filterCount,
+    this.error,
+  });
+
+  String className;
+
+  bool ok;
+
+  /// 64-bit, so carried as a string.
+  String sourceId;
+
+  String name;
+
+  String lang;
+
+  String baseUrl;
+
+  bool supportsLatest;
+
+  bool configurable;
+
+  /// How many filters the source declares for its search UI.
+  int filterCount;
+
+  String? error;
+
+  Object encode() {
+    return <Object?>[
+      className,
+      ok,
+      sourceId,
+      name,
+      lang,
+      baseUrl,
+      supportsLatest,
+      configurable,
+      filterCount,
+      error,
+    ];
+  }
+
+  static LoadedSource decode(Object result) {
+    result as List<Object?>;
+    return LoadedSource(
+      className: result[0]! as String,
+      ok: result[1]! as bool,
+      sourceId: result[2]! as String,
+      name: result[3]! as String,
+      lang: result[4]! as String,
+      baseUrl: result[5]! as String,
+      supportsLatest: result[6]! as bool,
+      configurable: result[7]! as bool,
+      filterCount: result[8]! as int,
+      error: result[9] as String?,
+    );
+  }
+}
+
 /// The result of attempting to load one class out of an extension APK.
 /// Failures are values, not exceptions (INSTRUCTIONS.md 5.8).
 class ClassProbeResult {
@@ -182,8 +252,11 @@ class _PigeonCodec extends StandardMessageCodec {
     }    else if (value is ExtensionCandidate) {
       buffer.putUint8(130);
       writeValue(buffer, value.encode());
-    }    else if (value is ClassProbeResult) {
+    }    else if (value is LoadedSource) {
       buffer.putUint8(131);
+      writeValue(buffer, value.encode());
+    }    else if (value is ClassProbeResult) {
+      buffer.putUint8(132);
       writeValue(buffer, value.encode());
     } else {
       super.writeValue(buffer, value);
@@ -198,6 +271,8 @@ class _PigeonCodec extends StandardMessageCodec {
       case 130: 
         return ExtensionCandidate.decode(readValue(buffer)!);
       case 131: 
+        return LoadedSource.decode(readValue(buffer)!);
+      case 132: 
         return ClassProbeResult.decode(readValue(buffer)!);
       default:
         return super.readValueOfType(type, buffer);
@@ -330,6 +405,64 @@ class ExtensionHostApi {
       );
     } else {
       return (pigeonVar_replyList[0] as bool?)!;
+    }
+  }
+
+  /// What a successfully loaded source reports about itself. Proves the host
+  /// can talk to an extension through the shim, not merely construct it.
+  Future<List<LoadedSource?>> loadSources(String packageName, List<String?> classNames) async {
+    final String pigeonVar_channelName = 'dev.flutter.pigeon.mimasu.ExtensionHostApi.loadSources$pigeonVar_messageChannelSuffix';
+    final BasicMessageChannel<Object?> pigeonVar_channel = BasicMessageChannel<Object?>(
+      pigeonVar_channelName,
+      pigeonChannelCodec,
+      binaryMessenger: pigeonVar_binaryMessenger,
+    );
+    final List<Object?>? pigeonVar_replyList =
+        await pigeonVar_channel.send(<Object?>[packageName, classNames]) as List<Object?>?;
+    if (pigeonVar_replyList == null) {
+      throw _createConnectionError(pigeonVar_channelName);
+    } else if (pigeonVar_replyList.length > 1) {
+      throw PlatformException(
+        code: pigeonVar_replyList[0]! as String,
+        message: pigeonVar_replyList[1] as String?,
+        details: pigeonVar_replyList[2],
+      );
+    } else if (pigeonVar_replyList[0] == null) {
+      throw PlatformException(
+        code: 'null-error',
+        message: 'Host platform returned null value for non-null return value.',
+      );
+    } else {
+      return (pigeonVar_replyList[0] as List<Object?>?)!.cast<LoadedSource?>();
+    }
+  }
+
+  /// Hosts an extension has contacted through the client the host provides.
+  /// Best-effort: an extension using its own client is not covered (5.7).
+  Future<Map<String?, int?>> requestLogHostCounts() async {
+    final String pigeonVar_channelName = 'dev.flutter.pigeon.mimasu.ExtensionHostApi.requestLogHostCounts$pigeonVar_messageChannelSuffix';
+    final BasicMessageChannel<Object?> pigeonVar_channel = BasicMessageChannel<Object?>(
+      pigeonVar_channelName,
+      pigeonChannelCodec,
+      binaryMessenger: pigeonVar_binaryMessenger,
+    );
+    final List<Object?>? pigeonVar_replyList =
+        await pigeonVar_channel.send(null) as List<Object?>?;
+    if (pigeonVar_replyList == null) {
+      throw _createConnectionError(pigeonVar_channelName);
+    } else if (pigeonVar_replyList.length > 1) {
+      throw PlatformException(
+        code: pigeonVar_replyList[0]! as String,
+        message: pigeonVar_replyList[1] as String?,
+        details: pigeonVar_replyList[2],
+      );
+    } else if (pigeonVar_replyList[0] == null) {
+      throw PlatformException(
+        code: 'null-error',
+        message: 'Host platform returned null value for non-null return value.',
+      );
+    } else {
+      return (pigeonVar_replyList[0] as Map<Object?, Object?>?)!.cast<String?, int?>();
     }
   }
 

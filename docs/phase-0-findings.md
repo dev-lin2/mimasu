@@ -179,3 +179,81 @@ launched, and **the design has no screen for it** — worth adding to
   repositories may expose real source class names. Since the class is always
   read from metadata this does not matter functionally, but it means the class
   name cannot be used to identify or de-duplicate a source.
+
+---
+
+# Addendum — the shim works
+
+Written after building the `extensions-lib` shim against the surface in §4.
+Verified on the same emulator, same two extensions.
+
+## Result
+
+Both extensions' source classes now **load, instantiate, and answer
+questions**:
+
+```
+WEBTOONSCAN                          TAPAS
+id: 3062846066388633553              id: 5554748812413853237
+lang: en                             lang: en
+baseUrl: https://webtoonscan.com     baseUrl: https://tapas.io
+supportsLatest: true                 supportsLatest: true
+configurable: false                  configurable: true
+```
+
+Those values come from the extension's own code, reached through the shim
+interfaces. Class ancestry confirms `keiyoushi.source.Generated` extends
+`eu.kanade.tachiyomi.source.online.HttpSource` (through two R8-minified
+intermediates, `c0` and `y`), and one of them implements
+`eu.kanade.tachiyomi.source.ConfigurableSource`.
+
+## What this proves
+
+1. **The class surface in §4 is correct and sufficient.** Nothing else was
+   needed to get a source running.
+2. **Type identity holds across the class-loader boundary.** Because the
+   extension's `PathClassLoader` is parented on the host's, the `HttpSource`
+   the extension extends *is* the host's `HttpSource`. The host uses ordinary
+   `as?` casts, not reflection. This is the load-bearing fact of the whole
+   design.
+3. **Injekt registration works, and order matters.** A source constructor calls
+   `injectLazy<NetworkHelper>()`, so `ShimRegistry.ensureInitialised` must run
+   before instantiation. It does, and instantiation succeeds.
+4. **Every third-party dependency resolves from Maven Central**: OkHttp 4.12,
+   Okio 3.9, Jsoup 1.18, androidx.preference 1.2.1, kotlinx-serialization-json
+   1.7.3, and RxJava **1**.3.8. Injekt does not — it is a jcenter-era artifact,
+   so its API is provided by the host like the rest of the shim rather than
+   pulled from a proxy.
+
+## Source ids match the index — confirmed
+
+`HttpSource.id` is derived from `name.lowercase()/lang/versionId`, MD5, first
+eight bytes big-endian, masked to `Long.MAX_VALUE`. That reproduces the
+ecosystem's algorithm exactly:
+
+| Source | Host-derived | Index-declared |
+|---|---|---|
+| Tapas | 5554748812413853237 | 5554748812413853237 |
+| WebtoonScan | 3062846066388633553 | 3062846066388633553 |
+
+This matters more than it looks. Per-extension preferences (§5.6), library
+entries (§7) and index metadata (§6) are all keyed by source id. Had the
+derivation differed, those three would have silently disagreed.
+
+## Not yet verified
+
+- **`getFilterList()` returned 0 filters for both.** Plausible — neither source
+  need declare filters — but it is equally consistent with the host's
+  `FilterList` being wrong. Confirm against a source that definitely has
+  filters before relying on the search UI.
+- **No network call has been made through a source.** The request log exists
+  and is wired to the client the host hands out, but nothing has exercised it,
+  so §5.7's logging is untested.
+- **Everything above is the manga flavour.** The anime flavour is the same
+  machinery with `animesource` type names, and remains the one open question.
+
+## What is now the blocking work
+
+Not the mechanism — that is done. It is the **anime type names**, which one
+anime extension APK answers. Until then the shim is a harness that proves the
+host, not a feature the app can use.
