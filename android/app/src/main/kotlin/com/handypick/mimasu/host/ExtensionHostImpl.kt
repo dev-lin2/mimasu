@@ -7,7 +7,13 @@ import android.content.pm.PackageManager
 import android.net.Uri
 import android.os.Build
 import android.provider.Settings
+import eu.kanade.tachiyomi.animesource.AnimeCatalogueSource
+import eu.kanade.tachiyomi.animesource.AnimeSourceFactory
+import eu.kanade.tachiyomi.animesource.ConfigurableAnimeSource
+import eu.kanade.tachiyomi.animesource.AnimeSource
+import eu.kanade.tachiyomi.animesource.online.AnimeHttpSource
 import eu.kanade.tachiyomi.network.RequestLog
+import kotlinx.coroutines.runBlocking
 import eu.kanade.tachiyomi.source.CatalogueSource
 import eu.kanade.tachiyomi.source.ConfigurableSource
 import eu.kanade.tachiyomi.source.Source
@@ -28,6 +34,9 @@ import java.security.MessageDigest
 class ExtensionHostImpl(private val context: Context) : ExtensionHostApi {
 
     private val pm: PackageManager get() = context.packageManager
+
+    /** Extension code runs here, never on the platform thread. */
+    private val io = java.util.concurrent.Executors.newFixedThreadPool(2)
 
     override fun getHostInfo(): HostInfo = HostInfo(
         androidRelease = Build.VERSION.RELEASE ?: "unknown",
@@ -151,13 +160,14 @@ class ExtensionHostImpl(private val context: Context) : ExtensionHostApi {
         val out = mutableListOf<LoadedSource?>()
         for (className in wanted) {
             try {
-                val instance = Class.forName(className, false, loader)
+                val instance = Class.forName(qualify(packageName, className), false, loader)
                     .getDeclaredConstructor()
                     .apply { isAccessible = true }
                     .newInstance()
 
                 // A factory yields several sources, usually one per language.
                 val sources: List<Any> = when (instance) {
+                    is AnimeSourceFactory -> instance.createSources()
                     is SourceFactory -> instance.createSources()
                     else -> listOf(instance)
                 }
@@ -172,13 +182,104 @@ class ExtensionHostImpl(private val context: Context) : ExtensionHostApi {
         return out
     }
 
-    private fun describe(className: String, source: Any): LoadedSource {
-        val base = source as? Source
-            ?: return failedSource(
-                className,
-                "loaded, but not a Source: ${source.javaClass.name}",
-            )
+    /**
+     * Asks a source for one page of popular titles, for real, over the
+     * network. This is the end-to-end proof: extension code builds the
+     * request, the host's client performs it, and extension code parses the
+     * response back into shim types.
+     *
+     * Async, and it has to be: Pigeon dispatches host calls on the platform
+     * main thread, where Android refuses network work outright. Doing this
+     * synchronously earned a NetworkOnMainThreadException.
+     */
+    override fun fetchPopular(
+        packageName: String,
+        className: String,
+        page: Long,
+        callback: (Result<FetchResult>) -> Unit,
+    ) {
+        io.execute {
+            callback(Result.success(fetchPopularBlocking(packageName, className, page)))
+        }
+    }
 
+    private fun fetchPopularBlocking(
+        packageName: String,
+        className: String,
+        page: Long,
+    ): FetchResult {
+        ShimRegistry.ensureInitialised(context)
+        val started = System.nanoTime()
+
+        fun failed(error: String) = FetchResult(
+            ok = false,
+            sourceName = "",
+            items = emptyList(),
+            hasNextPage = false,
+            millis = (System.nanoTime() - started) / 1_000_000,
+            error = error,
+        )
+
+        val apkPath = runCatching {
+            pm.getApplicationInfo(packageName, 0).sourceDir
+        }.getOrNull() ?: return failed("package not installed: $packageName")
+
+        return try {
+            val loader = PathClassLoader(apkPath, javaClass.classLoader)
+            val instance = Class.forName(qualify(packageName, className), false, loader)
+                .getDeclaredConstructor()
+                .apply { isAccessible = true }
+                .newInstance()
+
+            val source = when (instance) {
+                is AnimeSourceFactory -> instance.createSources().firstOrNull()
+                else -> instance
+            } ?: return failed("factory produced no sources")
+
+            val catalogue = source as? AnimeCatalogueSource
+                ?: return failed(
+                    "not an AnimeCatalogueSource: ${source.javaClass.name}",
+                )
+
+            // The suspend orchestration in the shim is blocking underneath, so
+            // driving it from here needs no coroutine machinery.
+            val result = runBlocking { catalogue.getPopularAnime(page.toInt()) }
+
+            FetchResult(
+                ok = true,
+                sourceName = catalogue.name,
+                items = result.animes.map {
+                    FetchedAnime(
+                        title = it.title,
+                        url = it.url,
+                        thumbnailUrl = it.thumbnail_url,
+                        description = it.description,
+                    )
+                },
+                hasNextPage = result.hasNextPage,
+                millis = (System.nanoTime() - started) / 1_000_000,
+                error = null,
+            )
+        } catch (t: Throwable) {
+            failed(t.describe())
+        }
+    }
+
+    private fun describe(className: String, source: Any): LoadedSource {
+        // Both flavours are handled: anime is what the app needs, manga is the
+        // harness the shim was first verified against.
+        val animeBase = source as? AnimeSource
+        val mangaBase = source as? Source
+        if (animeBase == null && mangaBase == null) {
+            return failedSource(
+                className,
+                "loaded, but is neither an AnimeSource nor a Source: " +
+                    source.javaClass.name,
+            )
+        }
+
+        val animeCat = source as? AnimeCatalogueSource
+        val animeHttp = source as? AnimeHttpSource
         val catalogue = source as? CatalogueSource
         val http = source as? HttpSource
 
@@ -190,13 +291,22 @@ class ExtensionHostImpl(private val context: Context) : ExtensionHostApi {
         return LoadedSource(
             className = className,
             ok = true,
-            sourceId = safe("") { base.id.toString() },
-            name = safe("") { base.name },
-            lang = safe("") { base.lang },
-            baseUrl = safe("") { http?.baseUrl ?: "" },
-            supportsLatest = safe(false) { catalogue?.supportsLatest ?: false },
-            configurable = source is ConfigurableSource,
-            filterCount = safe(0L) { catalogue?.getFilterList()?.size?.toLong() ?: 0L },
+            sourceId = safe("") {
+                (animeBase?.id ?: mangaBase?.id ?: 0L).toString()
+            },
+            name = safe("") { animeBase?.name ?: mangaBase?.name ?: "" },
+            lang = safe("") { animeBase?.lang ?: mangaBase?.lang ?: "" },
+            baseUrl = safe("") { animeHttp?.baseUrl ?: http?.baseUrl ?: "" },
+            supportsLatest = safe(false) {
+                animeCat?.supportsLatest ?: catalogue?.supportsLatest ?: false
+            },
+            configurable = source is ConfigurableAnimeSource ||
+                source is ConfigurableSource,
+            filterCount = safe(0L) {
+                (animeCat?.getFilterList()?.size
+                    ?: catalogue?.getFilterList()?.size
+                    ?: 0).toLong()
+            },
             error = null,
         )
     }
@@ -213,6 +323,30 @@ class ExtensionHostImpl(private val context: Context) : ExtensionHostApi {
         filterCount = 0,
         error = error,
     )
+
+    /**
+     * Diagnostic. Extensions get their client from [NetworkHelper], which uses
+     * Android's system trust store — unlike Dart's HTTP stack, which ships its
+     * own CA bundle. When a source fails TLS this tells us whether the client
+     * works at all, so a stale device trust store is not mistaken for a broken
+     * shim.
+     */
+    override fun hostHttpCheck(url: String, callback: (Result<String>) -> Unit) {
+        io.execute {
+            ShimRegistry.ensureInitialised(context)
+            val result = try {
+                val helper = uy.kohesive.injekt.Injekt
+                    .getInstance(eu.kanade.tachiyomi.network.NetworkHelper::class.java)
+                val request = okhttp3.Request.Builder().url(url).build()
+                helper.client.newCall(request).execute().use { response ->
+                    "HTTP ${response.code}, ${response.body?.contentLength() ?: -1} bytes"
+                }
+            } catch (t: Throwable) {
+                "FAILED ${t.describe()}"
+            }
+            callback(Result.success(result))
+        }
+    }
 
     override fun requestLogHostCounts(): Map<String?, Long?> =
         RequestLog.hostCounts().mapValues { it.value.toLong() }
@@ -260,7 +394,9 @@ class ExtensionHostImpl(private val context: Context) : ExtensionHostApi {
             }
         }
 
-        return wanted.map { className -> probeOne(loader, className) }
+        return wanted.map { className ->
+            probeOne(loader, qualify(packageName, className))
+        }
     }
 
     private fun probeOne(loader: ClassLoader, className: String): ClassProbeResult {
@@ -307,6 +443,15 @@ class ExtensionHostImpl(private val context: Context) : ExtensionHostApi {
             error = error,
         )
     }
+
+    /**
+     * Metadata class names may be relative: a leading dot means "inside this
+     * package", so `.AnimeOnsen` in package `…animeextension.all.animeonsen`
+     * means `…animeextension.all.animeonsen.AnimeOnsen`. Confirmed against a
+     * real anime extension, which fails to load without this.
+     */
+    private fun qualify(packageName: String, className: String): String =
+        if (className.startsWith(".")) packageName + className else className
 
     private fun signingFlag(): Int =
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.P) {

@@ -33,7 +33,7 @@ abstract class TypeReference<T> {
         }
 }
 
-class FullTypeReference<T> : TypeReference<T>()
+open class FullTypeReference<T> : TypeReference<T>()
 
 /** Present so `InjektScope` references resolve; scoping is not modelled. */
 open class InjektScope(val registrar: InjektRegistrar)

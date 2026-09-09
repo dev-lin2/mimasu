@@ -257,3 +257,99 @@ derivation differed, those three would have silently disagreed.
 Not the mechanism — that is done. It is the **anime type names**, which one
 anime extension APK answers. Until then the shim is a harness that proves the
 host, not a feature the app can use.
+
+---
+
+# Addendum 2 — the anime surface, CONFIRMED
+
+Two anime repositories supplied by the project owner:
+`yuzono/anime-repo` and `Secozzi/aniyomi-extensions`. 254 and 3 extensions
+respectively, all parsed and all correctly classified as installable anime.
+
+## Confirmed from a real anime extension APK
+
+`eu.kanade.tachiyomi.animeextension.all.animeonsen` v14.10, lib **14**.
+
+| | |
+|---|---|
+| Manifest feature | `tachiyomi.animeextension` |
+| Class key | `tachiyomi.animeextension.class` = `.AnimeOnsen` |
+| NSFW key | `tachiyomi.animeextension.nsfw` |
+| Lib version | 14 and 16 seen in the wild (not 1.x like manga) |
+
+**Class names are relative.** A leading dot means "in this package", so
+`.AnimeOnsen` is `eu.kanade.tachiyomi.animeextension.all.animeonsen.AnimeOnsen`.
+Loading fails outright without handling this.
+
+**The surface, read from `classes.dex`:**
+
+```
+eu.kanade.tachiyomi.animesource.online.AnimeHttpSource
+eu.kanade.tachiyomi.animesource.ConfigurableAnimeSource
+eu.kanade.tachiyomi.animesource.model.SAnime      (+ Companion)
+eu.kanade.tachiyomi.animesource.model.SEpisode    (+ Companion)
+eu.kanade.tachiyomi.animesource.model.Video
+eu.kanade.tachiyomi.animesource.model.Track
+eu.kanade.tachiyomi.animesource.model.AnimesPage
+eu.kanade.tachiyomi.animesource.model.AnimeFilter (+ $Select)
+eu.kanade.tachiyomi.animesource.model.AnimeFilterList
+eu.kanade.tachiyomi.network.NetworkHelper
+eu.kanade.tachiyomi.network.RequestsKt
+eu.kanade.tachiyomi.network.interceptor.RateLimitInterceptorKt
+eu.kanade.tachiyomi.util.JsoupExtensionsKt
+```
+
+Abstract members, from the same dex: `popularAnimeRequest`/`Parse`,
+`latestUpdatesRequest`/`Parse`, `searchAnimeRequest`/`Parse`,
+`animeDetailsRequest`/`Parse`, `episodeListRequest`/`Parse`,
+`videoListRequest`/`Parse`, `videoUrlParse`, `getAnimeUrl`, `getFilterList`.
+
+**Neither `rx.Observable` nor `kotlin.coroutines.Continuation` appears.**
+Extensions implement only the request/parse pairs, so the base class's fetch
+orchestration is entirely the host's to define and no extension calls it.
+
+## Three JVM-naming traps
+
+Kotlin file-facade names must match what extensions reference, or they fail at
+runtime rather than compile time:
+
+- `eu.kanade.tachiyomi.network.RequestsKt` — needs `@file:JvmName`, or Kotlin
+  names it after the file and `GET`/`POST` are unreachable.
+- `eu.kanade.tachiyomi.util.JsoupExtensionsKt` — same.
+- `rateLimit` takes a **`kotlin.time.Duration`**, a value class, so the symbol
+  is name-mangled: `rateLimit-SxA4cEA$default(Builder, I, J, I, Object)`.
+  Declaring a plain `Long` produces a different symbol and a NoSuchMethodError.
+
+## Result — loads and answers
+
+```
+ANIMEONSEN
+id: 8542735178285060053    (matches the index exactly, again)
+lang: all
+baseUrl: https://www.animeonsen.xyz
+configurable: true
+filters: 1
+ancestry: AnimeHttpSource + interface ConfigurableAnimeSource
+```
+
+## Where it stops: device certificate trust
+
+A real network fetch through a source fails:
+
+```
+okhttp trust check (raw.githubusercontent.com): HTTP 200
+fetchPopular (4 different sources): SSLHandshakeException,
+  "Trust anchor for certification path not found"
+```
+
+Same client, same device, one works and one does not — so this is **not** the
+shim. The API 31 emulator image ships a 2021 CA store, and these sites chain to
+roots added since. Dart's fetches succeed only because Flutter bundles its own
+CA set; OkHttp uses the platform store.
+
+**Untested, therefore unproven: that a source returns real titles.** Everything
+up to the TLS handshake is verified. To close it, run on a device with a current
+CA store, or a newer emulator image. An API 36 image is installed here but its
+AVD would not boot on this SDK layout (`avdmanager` wrote a relative
+`image.sysdir.1` resolved against the wrong parent — a knock-on of `ANDROID_HOME`
+pointing at `Sdk\cmdline-tools` instead of `Sdk`).

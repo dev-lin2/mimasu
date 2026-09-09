@@ -1,4 +1,8 @@
 @file:Suppress("PackageDirectoryMismatch", "unused")
+// The top-level GET/POST helpers must live in the file class the ecosystem
+// names: extensions reference eu.kanade.tachiyomi.network.RequestsKt, and
+// Kotlin would otherwise call this facade NetworkKt after the file.
+@file:JvmName("RequestsKt")
 
 /*
  * eu.kanade.tachiyomi.network — the HTTP surface handed to extensions.

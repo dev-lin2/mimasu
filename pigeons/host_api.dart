@@ -62,6 +62,40 @@ class ExtensionCandidate {
   final String signatureSha256;
 }
 
+/// One title as an extension reported it.
+class FetchedAnime {
+  FetchedAnime({
+    required this.title,
+    required this.url,
+    required this.thumbnailUrl,
+    required this.description,
+  });
+
+  final String title;
+  final String url;
+  final String? thumbnailUrl;
+  final String? description;
+}
+
+/// The outcome of asking a source for a page of titles.
+class FetchResult {
+  FetchResult({
+    required this.ok,
+    required this.sourceName,
+    required this.items,
+    required this.hasNextPage,
+    required this.millis,
+    required this.error,
+  });
+
+  final bool ok;
+  final String sourceName;
+  final List<FetchedAnime?> items;
+  final bool hasNextPage;
+  final int millis;
+  final String? error;
+}
+
 /// A source instance the host managed to load, interrogated through the
 /// shim interfaces.
 class LoadedSource {
@@ -142,6 +176,20 @@ abstract class ExtensionHostApi {
   /// What a successfully loaded source reports about itself. Proves the host
   /// can talk to an extension through the shim, not merely construct it.
   List<LoadedSource?> loadSources(String packageName, List<String?> classNames);
+
+  /// Calls a loaded source for real: one page of popular titles.
+  ///
+  /// Async because Pigeon dispatches host calls on the platform main
+  /// thread, and Android throws NetworkOnMainThreadException for network
+  /// work there. Confirmed the hard way.
+  @async
+  FetchResult fetchPopular(String packageName, String className, int page);
+
+  /// Performs a plain GET through the same OkHttp client extensions are
+  /// given. Distinguishes "the shim is broken" from "this device does not
+  /// trust that site" — the only question a TLS failure leaves open.
+  @async
+  String hostHttpCheck(String url);
 
   /// Hosts an extension has contacted through the client the host provides.
   /// Best-effort: an extension using its own client is not covered (5.7).

@@ -61,6 +61,10 @@ dependencies {
     implementation("androidx.preference:preference-ktx:1.2.1")
     implementation("org.jetbrains.kotlinx:kotlinx-serialization-json:1.7.3")
 
+    // The anime lib is suspend-based, so extensions may override suspend
+    // members. Keeping the shim faithful to that needs coroutines present.
+    implementation("org.jetbrains.kotlinx:kotlinx-coroutines-android:1.9.0")
+
     // A lib-1.4 extension still returns rx.Observable, so RxJava 1 has to be
     // on the classpath even though nothing of ours uses it.
     implementation("io.reactivex:rxjava:1.3.8")

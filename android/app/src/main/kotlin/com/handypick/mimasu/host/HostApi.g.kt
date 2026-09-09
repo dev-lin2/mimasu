@@ -133,6 +133,74 @@ data class ExtensionCandidate (
 }
 
 /**
+ * One title as an extension reported it.
+ *
+ * Generated class from Pigeon that represents data sent in messages.
+ */
+data class FetchedAnime (
+  val title: String,
+  val url: String,
+  val thumbnailUrl: String? = null,
+  val description: String? = null
+)
+ {
+  companion object {
+    fun fromList(pigeonVar_list: List<Any?>): FetchedAnime {
+      val title = pigeonVar_list[0] as String
+      val url = pigeonVar_list[1] as String
+      val thumbnailUrl = pigeonVar_list[2] as String?
+      val description = pigeonVar_list[3] as String?
+      return FetchedAnime(title, url, thumbnailUrl, description)
+    }
+  }
+  fun toList(): List<Any?> {
+    return listOf(
+      title,
+      url,
+      thumbnailUrl,
+      description,
+    )
+  }
+}
+
+/**
+ * The outcome of asking a source for a page of titles.
+ *
+ * Generated class from Pigeon that represents data sent in messages.
+ */
+data class FetchResult (
+  val ok: Boolean,
+  val sourceName: String,
+  val items: List<FetchedAnime?>,
+  val hasNextPage: Boolean,
+  val millis: Long,
+  val error: String? = null
+)
+ {
+  companion object {
+    fun fromList(pigeonVar_list: List<Any?>): FetchResult {
+      val ok = pigeonVar_list[0] as Boolean
+      val sourceName = pigeonVar_list[1] as String
+      val items = pigeonVar_list[2] as List<FetchedAnime?>
+      val hasNextPage = pigeonVar_list[3] as Boolean
+      val millis = pigeonVar_list[4] as Long
+      val error = pigeonVar_list[5] as String?
+      return FetchResult(ok, sourceName, items, hasNextPage, millis, error)
+    }
+  }
+  fun toList(): List<Any?> {
+    return listOf(
+      ok,
+      sourceName,
+      items,
+      hasNextPage,
+      millis,
+      error,
+    )
+  }
+}
+
+/**
  * A source instance the host managed to load, interrogated through the
  * shim interfaces.
  *
@@ -243,10 +311,20 @@ private open class HostApiPigeonCodec : StandardMessageCodec() {
       }
       131.toByte() -> {
         return (readValue(buffer) as? List<Any?>)?.let {
-          LoadedSource.fromList(it)
+          FetchedAnime.fromList(it)
         }
       }
       132.toByte() -> {
+        return (readValue(buffer) as? List<Any?>)?.let {
+          FetchResult.fromList(it)
+        }
+      }
+      133.toByte() -> {
+        return (readValue(buffer) as? List<Any?>)?.let {
+          LoadedSource.fromList(it)
+        }
+      }
+      134.toByte() -> {
         return (readValue(buffer) as? List<Any?>)?.let {
           ClassProbeResult.fromList(it)
         }
@@ -264,18 +342,27 @@ private open class HostApiPigeonCodec : StandardMessageCodec() {
         stream.write(130)
         writeValue(stream, value.toList())
       }
-      is LoadedSource -> {
+      is FetchedAnime -> {
         stream.write(131)
         writeValue(stream, value.toList())
       }
-      is ClassProbeResult -> {
+      is FetchResult -> {
         stream.write(132)
+        writeValue(stream, value.toList())
+      }
+      is LoadedSource -> {
+        stream.write(133)
+        writeValue(stream, value.toList())
+      }
+      is ClassProbeResult -> {
+        stream.write(134)
         writeValue(stream, value.toList())
       }
       else -> super.writeValue(stream, value)
     }
   }
 }
+
 
 /** Generated interface from Pigeon that represents a handler of messages from Flutter. */
 interface ExtensionHostApi {
@@ -301,6 +388,20 @@ interface ExtensionHostApi {
    * can talk to an extension through the shim, not merely construct it.
    */
   fun loadSources(packageName: String, classNames: List<String?>): List<LoadedSource?>
+  /**
+   * Calls a loaded source for real: one page of popular titles.
+   *
+   * Async because Pigeon dispatches host calls on the platform main
+   * thread, and Android throws NetworkOnMainThreadException for network
+   * work there. Confirmed the hard way.
+   */
+  fun fetchPopular(packageName: String, className: String, page: Long, callback: (Result<FetchResult>) -> Unit)
+  /**
+   * Performs a plain GET through the same OkHttp client extensions are
+   * given. Distinguishes "the shim is broken" from "this device does not
+   * trust that site" — the only question a TLS failure leaves open.
+   */
+  fun hostHttpCheck(url: String, callback: (Result<String>) -> Unit)
   /**
    * Hosts an extension has contacted through the client the host provides.
    * Best-effort: an extension using its own client is not covered (5.7).
@@ -396,6 +497,48 @@ interface ExtensionHostApi {
               wrapError(exception)
             }
             reply.reply(wrapped)
+          }
+        } else {
+          channel.setMessageHandler(null)
+        }
+      }
+      run {
+        val channel = BasicMessageChannel<Any?>(binaryMessenger, "dev.flutter.pigeon.mimasu.ExtensionHostApi.fetchPopular$separatedMessageChannelSuffix", codec)
+        if (api != null) {
+          channel.setMessageHandler { message, reply ->
+            val args = message as List<Any?>
+            val packageNameArg = args[0] as String
+            val classNameArg = args[1] as String
+            val pageArg = args[2] as Long
+            api.fetchPopular(packageNameArg, classNameArg, pageArg) { result: Result<FetchResult> ->
+              val error = result.exceptionOrNull()
+              if (error != null) {
+                reply.reply(wrapError(error))
+              } else {
+                val data = result.getOrNull()
+                reply.reply(wrapResult(data))
+              }
+            }
+          }
+        } else {
+          channel.setMessageHandler(null)
+        }
+      }
+      run {
+        val channel = BasicMessageChannel<Any?>(binaryMessenger, "dev.flutter.pigeon.mimasu.ExtensionHostApi.hostHttpCheck$separatedMessageChannelSuffix", codec)
+        if (api != null) {
+          channel.setMessageHandler { message, reply ->
+            val args = message as List<Any?>
+            val urlArg = args[0] as String
+            api.hostHttpCheck(urlArg) { result: Result<String> ->
+              val error = result.exceptionOrNull()
+              if (error != null) {
+                reply.reply(wrapError(error))
+              } else {
+                val data = result.getOrNull()
+                reply.reply(wrapResult(data))
+              }
+            }
           }
         } else {
           channel.setMessageHandler(null)

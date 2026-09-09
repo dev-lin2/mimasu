@@ -23,6 +23,7 @@ class _HostProbeScreenState extends State<HostProbeScreen> {
   List<ClassProbeResult?> _probes = const [];
   List<LoadedSource?> _loaded = const [];
   Map<String?, int?> _hosts = const {};
+  FetchResult? _fetched;
   String? _error;
   bool _busy = false;
 
@@ -72,6 +73,44 @@ class _HostProbeScreenState extends State<HostProbeScreen> {
           await _host.loadSources(c.packageName, classNames.cast<String?>()),
         );
       }
+      // End-to-end proof: ask the first anime source for real titles over the
+      // network. Anime is what this app is for; a manga source would load but
+      // be useless to it.
+      FetchResult? fetched;
+      for (final c in found) {
+        if (c == null) continue;
+        if (!c.packageName.contains('.animeextension.')) continue;
+        final classNames = c.metadata.entries
+            .where((e) => (e.key ?? '').endsWith('.class'))
+            .map((e) => e.value ?? '')
+            .expand((v) => v.split(';'))
+            .map((v) => v.trim())
+            .where((v) => v.isNotEmpty)
+            .toList();
+        if (classNames.isEmpty) continue;
+        fetched = await _host.fetchPopular(c.packageName, classNames.first, 1);
+        if (fetched.ok) break;
+      }
+
+      // Settles whether an SSL failure means a stale device trust store or a
+      // broken shim: same client, a host we know serves a widely-trusted cert.
+      final tls = await _host.hostHttpCheck(
+        "https://raw.githubusercontent.com/yuzono/anime-repo/repo/index.min.json",
+      );
+      debugPrint("[mimasu] okhttp trust check: $tls");
+
+      // Also logged so the result is readable from logcat while iterating.
+      if (fetched != null) {
+        debugPrint(
+          "[mimasu] fetchPopular ok=${fetched.ok} src=${fetched.sourceName} "
+          "items=${fetched.items.length} ms=${fetched.millis} "
+          "err=${fetched.error}",
+        );
+        for (final a in fetched.items.whereType<FetchedAnime>().take(8)) {
+          debugPrint("[mimasu]   title=${a.title} url=${a.url}");
+        }
+      }
+
       final hosts = await _host.requestLogHostCounts();
 
       if (!mounted) return;
@@ -81,6 +120,7 @@ class _HostProbeScreenState extends State<HostProbeScreen> {
         _probes = probes;
         _loaded = loaded;
         _hosts = hosts;
+        _fetched = fetched;
         _busy = false;
       });
     } catch (e) {
@@ -152,6 +192,29 @@ class _HostProbeScreenState extends State<HostProbeScreen> {
                   ),
                   ('sha-256', c.signatureSha256),
                 ],
+              ),
+            ],
+            if (_fetched case final f?) ...[
+              const SizedBox(height: 14),
+              _Card(
+                title: f.ok
+                    ? "Live fetch: ${f.sourceName}"
+                    : "Live fetch failed",
+                ok: f.ok,
+                accentTitle: !f.ok,
+                rows: f.ok
+                    ? [
+                        ("took", "${f.millis} ms, hasNextPage ${f.hasNextPage}"),
+                        (
+                          'titles (${f.items.length})',
+                          f.items
+                              .whereType<FetchedAnime>()
+                              .take(12)
+                              .map((a) => a.title)
+                              .join('\n'),
+                        ),
+                      ]
+                    : [("error", f.error ?? "unknown")],
               ),
             ],
             if (_loaded.isNotEmpty) ...[

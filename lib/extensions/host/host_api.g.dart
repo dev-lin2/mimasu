@@ -119,6 +119,90 @@ class ExtensionCandidate {
   }
 }
 
+/// One title as an extension reported it.
+class FetchedAnime {
+  FetchedAnime({
+    required this.title,
+    required this.url,
+    this.thumbnailUrl,
+    this.description,
+  });
+
+  String title;
+
+  String url;
+
+  String? thumbnailUrl;
+
+  String? description;
+
+  Object encode() {
+    return <Object?>[
+      title,
+      url,
+      thumbnailUrl,
+      description,
+    ];
+  }
+
+  static FetchedAnime decode(Object result) {
+    result as List<Object?>;
+    return FetchedAnime(
+      title: result[0]! as String,
+      url: result[1]! as String,
+      thumbnailUrl: result[2] as String?,
+      description: result[3] as String?,
+    );
+  }
+}
+
+/// The outcome of asking a source for a page of titles.
+class FetchResult {
+  FetchResult({
+    required this.ok,
+    required this.sourceName,
+    required this.items,
+    required this.hasNextPage,
+    required this.millis,
+    this.error,
+  });
+
+  bool ok;
+
+  String sourceName;
+
+  List<FetchedAnime?> items;
+
+  bool hasNextPage;
+
+  int millis;
+
+  String? error;
+
+  Object encode() {
+    return <Object?>[
+      ok,
+      sourceName,
+      items,
+      hasNextPage,
+      millis,
+      error,
+    ];
+  }
+
+  static FetchResult decode(Object result) {
+    result as List<Object?>;
+    return FetchResult(
+      ok: result[0]! as bool,
+      sourceName: result[1]! as String,
+      items: (result[2] as List<Object?>?)!.cast<FetchedAnime?>(),
+      hasNextPage: result[3]! as bool,
+      millis: result[4]! as int,
+      error: result[5] as String?,
+    );
+  }
+}
+
 /// A source instance the host managed to load, interrogated through the
 /// shim interfaces.
 class LoadedSource {
@@ -252,11 +336,17 @@ class _PigeonCodec extends StandardMessageCodec {
     }    else if (value is ExtensionCandidate) {
       buffer.putUint8(130);
       writeValue(buffer, value.encode());
-    }    else if (value is LoadedSource) {
+    }    else if (value is FetchedAnime) {
       buffer.putUint8(131);
       writeValue(buffer, value.encode());
-    }    else if (value is ClassProbeResult) {
+    }    else if (value is FetchResult) {
       buffer.putUint8(132);
+      writeValue(buffer, value.encode());
+    }    else if (value is LoadedSource) {
+      buffer.putUint8(133);
+      writeValue(buffer, value.encode());
+    }    else if (value is ClassProbeResult) {
+      buffer.putUint8(134);
       writeValue(buffer, value.encode());
     } else {
       super.writeValue(buffer, value);
@@ -271,8 +361,12 @@ class _PigeonCodec extends StandardMessageCodec {
       case 130: 
         return ExtensionCandidate.decode(readValue(buffer)!);
       case 131: 
-        return LoadedSource.decode(readValue(buffer)!);
+        return FetchedAnime.decode(readValue(buffer)!);
       case 132: 
+        return FetchResult.decode(readValue(buffer)!);
+      case 133: 
+        return LoadedSource.decode(readValue(buffer)!);
+      case 134: 
         return ClassProbeResult.decode(readValue(buffer)!);
       default:
         return super.readValueOfType(type, buffer);
@@ -434,6 +528,68 @@ class ExtensionHostApi {
       );
     } else {
       return (pigeonVar_replyList[0] as List<Object?>?)!.cast<LoadedSource?>();
+    }
+  }
+
+  /// Calls a loaded source for real: one page of popular titles.
+  ///
+  /// Async because Pigeon dispatches host calls on the platform main
+  /// thread, and Android throws NetworkOnMainThreadException for network
+  /// work there. Confirmed the hard way.
+  Future<FetchResult> fetchPopular(String packageName, String className, int page) async {
+    final String pigeonVar_channelName = 'dev.flutter.pigeon.mimasu.ExtensionHostApi.fetchPopular$pigeonVar_messageChannelSuffix';
+    final BasicMessageChannel<Object?> pigeonVar_channel = BasicMessageChannel<Object?>(
+      pigeonVar_channelName,
+      pigeonChannelCodec,
+      binaryMessenger: pigeonVar_binaryMessenger,
+    );
+    final List<Object?>? pigeonVar_replyList =
+        await pigeonVar_channel.send(<Object?>[packageName, className, page]) as List<Object?>?;
+    if (pigeonVar_replyList == null) {
+      throw _createConnectionError(pigeonVar_channelName);
+    } else if (pigeonVar_replyList.length > 1) {
+      throw PlatformException(
+        code: pigeonVar_replyList[0]! as String,
+        message: pigeonVar_replyList[1] as String?,
+        details: pigeonVar_replyList[2],
+      );
+    } else if (pigeonVar_replyList[0] == null) {
+      throw PlatformException(
+        code: 'null-error',
+        message: 'Host platform returned null value for non-null return value.',
+      );
+    } else {
+      return (pigeonVar_replyList[0] as FetchResult?)!;
+    }
+  }
+
+  /// Performs a plain GET through the same OkHttp client extensions are
+  /// given. Distinguishes "the shim is broken" from "this device does not
+  /// trust that site" — the only question a TLS failure leaves open.
+  Future<String> hostHttpCheck(String url) async {
+    final String pigeonVar_channelName = 'dev.flutter.pigeon.mimasu.ExtensionHostApi.hostHttpCheck$pigeonVar_messageChannelSuffix';
+    final BasicMessageChannel<Object?> pigeonVar_channel = BasicMessageChannel<Object?>(
+      pigeonVar_channelName,
+      pigeonChannelCodec,
+      binaryMessenger: pigeonVar_binaryMessenger,
+    );
+    final List<Object?>? pigeonVar_replyList =
+        await pigeonVar_channel.send(<Object?>[url]) as List<Object?>?;
+    if (pigeonVar_replyList == null) {
+      throw _createConnectionError(pigeonVar_channelName);
+    } else if (pigeonVar_replyList.length > 1) {
+      throw PlatformException(
+        code: pigeonVar_replyList[0]! as String,
+        message: pigeonVar_replyList[1] as String?,
+        details: pigeonVar_replyList[2],
+      );
+    } else if (pigeonVar_replyList[0] == null) {
+      throw PlatformException(
+        code: 'null-error',
+        message: 'Host platform returned null value for non-null return value.',
+      );
+    } else {
+      return (pigeonVar_replyList[0] as String?)!;
     }
   }
 

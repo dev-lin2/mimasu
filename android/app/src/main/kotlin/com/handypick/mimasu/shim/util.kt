@@ -1,4 +1,5 @@
 @file:Suppress("PackageDirectoryMismatch", "unused")
+@file:JvmName("JsoupExtensionsKt")
 
 /*
  * eu.kanade.tachiyomi.util — response extensions extensions call, chiefly
