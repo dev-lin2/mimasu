@@ -1,17 +1,21 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
+import 'package:go_router/go_router.dart';
 
 import '../../../application/extensions/extensions_cubit.dart';
 import '../../../core/theme/app_theme.dart';
 import '../../../domain/entities/extension/extension_repo.dart';
 import '../../../domain/entities/extension/extension_repo_index.dart';
+import '../../../domain/entities/extension/installed_extension.dart';
+import '../../widgets/trust_prompt.dart';
 import '../../widgets/kind_chip.dart';
 import '../../widgets/section_head.dart';
 
-/// The Extensions screen from `docs/design.pen`, wired to real repository data.
+/// The Extensions screen from `docs/design.pen`.
 ///
-/// Installing is not implemented yet, so the Install action is inert and says
-/// so — better than a button that silently does nothing.
+/// Lists what is installed, what a repository offers, and installs from it.
+/// Mimasu never installs silently: the APK is downloaded and its signing key
+/// checked here, then Android's own installer does the rest (section 5.4).
 class ExtensionsScreen extends StatefulWidget {
   const ExtensionsScreen({super.key});
 
@@ -19,13 +23,30 @@ class ExtensionsScreen extends StatefulWidget {
   State<ExtensionsScreen> createState() => _ExtensionsScreenState();
 }
 
-class _ExtensionsScreenState extends State<ExtensionsScreen> {
+class _ExtensionsScreenState extends State<ExtensionsScreen>
+    with WidgetsBindingObserver {
   final _urlController = TextEditingController();
 
   @override
+  void initState() {
+    super.initState();
+    WidgetsBinding.instance.addObserver(this);
+  }
+
+  @override
   void dispose() {
+    WidgetsBinding.instance.removeObserver(this);
     _urlController.dispose();
     super.dispose();
+  }
+
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    // Installing and removing both happen in Android's UI, so the only
+    // reliable moment to re-read what is on the device is coming back.
+    if (state == AppLifecycleState.resumed) {
+      context.read<ExtensionsCubit>().refreshInstalled();
+    }
   }
 
   void _submit() {
@@ -43,6 +64,29 @@ class _ExtensionsScreenState extends State<ExtensionsScreen> {
             state.error == null &&
             state.index != null) {
           _urlController.clear();
+        }
+
+        // An unrecognised signing key is the one moment the user must decide
+        // something, so it interrupts rather than sitting in the page.
+        final pending = state.pending;
+        if (pending != null && pending.needsPrompt) {
+          showTrustPrompt(context, pending).then((decision) {
+            if (!context.mounted) return;
+            final cubit = context.read<ExtensionsCubit>();
+            if (decision == TrustDecision.trustAndInstall) {
+              cubit.confirmInstall(trustKey: true);
+            } else {
+              cubit.cancelInstall();
+            }
+          });
+        }
+
+        final notice = state.notice;
+        if (notice != null) {
+          ScaffoldMessenger.of(context)
+            ..hideCurrentSnackBar()
+            ..showSnackBar(SnackBar(content: Text(notice)));
+          context.read<ExtensionsCubit>().dismissNotice();
         }
       },
       builder: (context, state) {
@@ -70,7 +114,25 @@ class _ExtensionsScreenState extends State<ExtensionsScreen> {
                     onDismiss: cubit.dismissError,
                   ),
                 ],
+                if (!state.canInstall) ...[
+                  const SizedBox(height: 12),
+                  const _PermissionNotice(),
+                ],
                 const SizedBox(height: 24),
+                if (state.installed.isNotEmpty) ...[
+                  SectionHead(
+                    title: 'Installed',
+                    trailing: '${state.installed.length}',
+                  ),
+                  const SizedBox(height: 14),
+                  for (final e in state.installed)
+                    _InstalledRow(
+                      extension: e,
+                      onTrust: () => cubit.trustInstalled(e),
+                      onRemove: () => cubit.removeExtension(e),
+                    ),
+                  const SizedBox(height: 26),
+                ],
                 if (state.repos.isNotEmpty) ...[
                   _RepoStrip(
                     repos: state.repos,
@@ -97,6 +159,8 @@ class _ExtensionsScreenState extends State<ExtensionsScreen> {
     );
   }
 
+  ExtensionsCubit get _cubit => context.read<ExtensionsCubit>();
+
   List<Widget> _catalogue(ExtensionsState state) {
     final repo = state.selected;
     final supported = state.supported;
@@ -116,7 +180,13 @@ class _ExtensionsScreenState extends State<ExtensionsScreen> {
           'listed below with the reason.',
         )
       else
-        for (final e in supported.take(40)) _EntryRow(entry: e),
+        for (final e in supported.take(40))
+          _EntryRow(
+            entry: e,
+            installed: state.installedPackages.contains(e.packageName),
+            installing: state.installingPackage == e.packageName,
+            onInstall: () => _cubit.beginInstall(e),
+          ),
       if (unsupported.isNotEmpty) ...[
         const SizedBox(height: 26),
         SectionHead(
@@ -381,8 +451,17 @@ class _RepoSummary extends StatelessWidget {
 }
 
 class _EntryRow extends StatelessWidget {
-  const _EntryRow({required this.entry});
+  const _EntryRow({
+    required this.entry,
+    this.installed = false,
+    this.installing = false,
+    this.onInstall,
+  });
+
   final ExtensionEntry entry;
+  final bool installed;
+  final bool installing;
+  final VoidCallback? onInstall;
 
   @override
   Widget build(BuildContext context) {
@@ -463,26 +542,38 @@ class _EntryRow extends StatelessWidget {
           ),
           if (entry.isSupported) ...[
             const SizedBox(width: 10),
-            OutlinedButton(
-              onPressed: () => ScaffoldMessenger.of(context).showSnackBar(
-                const SnackBar(
-                  content: Text('Installing arrives with the extension host.'),
+            if (installed)
+              const Padding(
+                padding: EdgeInsets.only(right: 6),
+                child: Icon(
+                  Icons.check_circle_outline,
+                  size: 19,
+                  color: AppColors.ok,
+                ),
+              )
+            else if (installing)
+              const SizedBox(
+                width: 19,
+                height: 19,
+                child: CircularProgressIndicator(strokeWidth: 2),
+              )
+            else
+              OutlinedButton(
+                onPressed: onInstall,
+                style: OutlinedButton.styleFrom(
+                  foregroundColor: AppColors.accent,
+                  side: const BorderSide(color: AppColors.accent),
+                  padding: const EdgeInsets.symmetric(horizontal: 14),
+                  minimumSize: const Size(0, 36),
+                  shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(8),
+                  ),
+                ),
+                child: const Text(
+                  'Install',
+                  style: TextStyle(fontSize: 13, fontWeight: FontWeight.w600),
                 ),
               ),
-              style: OutlinedButton.styleFrom(
-                foregroundColor: AppColors.accent,
-                side: const BorderSide(color: AppColors.accent),
-                padding: const EdgeInsets.symmetric(horizontal: 14),
-                minimumSize: const Size(0, 36),
-                shape: RoundedRectangleBorder(
-                  borderRadius: BorderRadius.circular(8),
-                ),
-              ),
-              child: const Text(
-                'Install',
-                style: TextStyle(fontSize: 13, fontWeight: FontWeight.w600),
-              ),
-            ),
           ],
         ],
       ),
@@ -597,4 +688,169 @@ class _Note extends StatelessWidget {
     ),
     child: Text(text, style: AppText.bodySecondary),
   );
+}
+
+/// Shown when Android has not granted "install unknown apps" yet. Without it
+/// the first install fails with no explanation (INSTRUCTIONS.md 5.4).
+class _PermissionNotice extends StatelessWidget {
+  const _PermissionNotice();
+
+  @override
+  Widget build(BuildContext context) => InkWell(
+    onTap: () => context.push('/install-permission'),
+    borderRadius: BorderRadius.circular(AppSpace.radiusCard),
+    child: Container(
+      padding: const EdgeInsets.all(13),
+      decoration: BoxDecoration(
+        color: AppColors.accent.withValues(alpha: 0.09),
+        borderRadius: BorderRadius.circular(AppSpace.radiusCard),
+        border: Border.all(color: AppColors.accent.withValues(alpha: 0.35)),
+      ),
+      child: const Row(
+        children: [
+          Icon(Icons.key_outlined, size: 17, color: AppColors.accent),
+          SizedBox(width: 10),
+          Expanded(
+            child: Text(
+              'Android has not been allowed to install apps from Mimasu. '
+              'Installing will fail until that is granted.',
+              style: TextStyle(
+                color: AppColors.textSecondary,
+                fontSize: 12,
+                height: 1.5,
+              ),
+            ),
+          ),
+        ],
+      ),
+    ),
+  );
+}
+
+/// One extension present on the device.
+class _InstalledRow extends StatelessWidget {
+  const _InstalledRow({
+    required this.extension,
+    required this.onTrust,
+    required this.onRemove,
+  });
+
+  final InstalledExtension extension;
+  final VoidCallback onTrust;
+  final VoidCallback onRemove;
+
+  @override
+  Widget build(BuildContext context) {
+    final untrusted = extension.trust == TrustState.untrusted;
+
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 16),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Container(
+            width: 40,
+            height: 40,
+            decoration: BoxDecoration(
+              color: AppColors.surfaceRaised,
+              borderRadius: BorderRadius.circular(10),
+            ),
+            child: Icon(
+              extension.isAnime ? Icons.movie_outlined : Icons.menu_book,
+              size: 18,
+              color: extension.isUsable
+                  ? AppColors.ok
+                  : AppColors.textTertiary,
+            ),
+          ),
+          const SizedBox(width: 12),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Row(
+                  children: [
+                    Flexible(
+                      child: Text(
+                        extension.label,
+                        style: AppText.body,
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                      ),
+                    ),
+                    const SizedBox(width: 6),
+                    KindChip(
+                      label: extension.isAnime ? 'ANIME' : 'MANGA',
+                      tone: extension.isUsable
+                          ? KindChipTone.ok
+                          : KindChipTone.dim,
+                    ),
+                  ],
+                ),
+                const SizedBox(height: 4),
+                Text(
+                  [
+                    'v${extension.versionName}',
+                    if (extension.libVersion != null)
+                      'lib ${extension.libVersion}',
+                    extension.shortKey,
+                  ].join(' · '),
+                  style: AppText.meta,
+                ),
+                if (untrusted) ...[
+                  const SizedBox(height: 4),
+                  const Text(
+                    'Signed by a key you have not trusted. It will not be '
+                    'loaded until you do.',
+                    style: TextStyle(
+                      color: AppColors.accent,
+                      fontSize: 11,
+                      height: 1.4,
+                    ),
+                  ),
+                ] else if (!extension.isAnime) ...[
+                  const SizedBox(height: 4),
+                  const Text(
+                    'Manga extension. Installed, but Mimasu plays video only.',
+                    style: TextStyle(
+                      color: AppColors.textTertiary,
+                      fontSize: 11,
+                      height: 1.4,
+                    ),
+                  ),
+                ],
+              ],
+            ),
+          ),
+          const SizedBox(width: 8),
+          if (untrusted && extension.isAnime)
+            OutlinedButton(
+              onPressed: onTrust,
+              style: OutlinedButton.styleFrom(
+                foregroundColor: AppColors.accent,
+                side: const BorderSide(color: AppColors.accent),
+                padding: const EdgeInsets.symmetric(horizontal: 12),
+                minimumSize: const Size(0, 36),
+                shape: RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(8),
+                ),
+              ),
+              child: const Text(
+                'Trust',
+                style: TextStyle(fontSize: 13, fontWeight: FontWeight.w600),
+              ),
+            ),
+          IconButton(
+            tooltip: 'Remove',
+            onPressed: onRemove,
+            icon: const Icon(
+              Icons.delete_outline,
+              size: 19,
+              color: AppColors.textTertiary,
+            ),
+          ),
+        ],
+      ),
+    );
+  }
 }

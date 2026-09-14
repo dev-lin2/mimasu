@@ -35,6 +35,15 @@ class ExtensionHostImpl(private val context: Context) : ExtensionHostApi {
 
     private val pm: PackageManager get() = context.packageManager
 
+    private val installer by lazy { ApkInstaller(context) }
+
+    override fun inspectApk(filePath: String): ApkInfo = installer.inspect(filePath)
+
+    override fun installApk(filePath: String): Boolean = installer.install(filePath)
+
+    override fun uninstallPackage(packageName: String): Boolean =
+        installer.uninstall(packageName)
+
     /** Extension code runs here, never on the platform thread. */
     private val io = java.util.concurrent.Executors.newFixedThreadPool(2)
 

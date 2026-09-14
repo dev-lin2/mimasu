@@ -8,6 +8,8 @@ import 'package:mimasu/data/repositories/extension_repository_impl.dart';
 import 'package:mimasu/data/storage/repo_store.dart';
 import 'package:mimasu/domain/entities/extension/extension_repo.dart';
 import 'package:mimasu/domain/entities/extension/extension_repo_index.dart';
+import 'package:mimasu/domain/entities/extension/installed_extension.dart';
+import 'package:mimasu/domain/repositories/extension_manager.dart';
 import 'package:mimasu/domain/repositories/extension_repository.dart';
 
 List<int> _fixture(String name) =>
@@ -142,7 +144,7 @@ void main() {
       ).addRepo('https://x.test/repo/index.min.json');
       expect(
         result.index.extensions.single.apkUrl,
-        'https://x.test/repo/one.apk',
+        'https://x.test/repo/apk/one.apk',
       );
     });
 
@@ -315,6 +317,7 @@ void main() {
             store: store ?? InMemoryRepoStore(),
             clock: () => DateTime(2026, 9, 8),
           ),
+          FakeExtensionManager(),
         );
 
     test('starts ready and empty when nothing is saved', () async {
@@ -407,3 +410,49 @@ void main() {
   });
 }
 
+
+/// The host channel is unavailable in unit tests, so installs are stubbed.
+/// Cubit tests must run with no Android host present (INSTRUCTIONS.md 16).
+class FakeExtensionManager implements ExtensionManager {
+  final trusted = <String>{};
+  final installedList = <InstalledExtension>[];
+  PendingInstall? nextPending;
+  InstallFailure? nextFailure;
+  int completed = 0;
+
+  @override
+  Future<bool> canInstall() async => true;
+
+  @override
+  Future<List<InstalledExtension>> installed() async => installedList;
+
+  @override
+  Future<PendingInstall> beginInstall(
+    ExtensionEntry entry, {
+    required String repositoryUrl,
+    String? declaredRepoKey,
+  }) async {
+    final failure = nextFailure;
+    if (failure != null) throw failure;
+    return nextPending ??
+        PendingInstall(
+          filePath: '/tmp/${entry.packageName}.apk',
+          packageName: entry.packageName,
+          label: entry.name,
+          versionName: entry.versionName,
+          signatureSha256: 'abc123',
+          repositoryUrl: repositoryUrl,
+          keyIsTrusted: trusted.contains('abc123'),
+          declaredKeyMatches: null,
+        );
+  }
+
+  @override
+  Future<void> trustKey(String sha256) async => trusted.add(sha256);
+
+  @override
+  Future<void> completeInstall(PendingInstall pending) async => completed++;
+
+  @override
+  Future<void> remove(String packageName) async {}
+}

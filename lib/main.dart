@@ -6,6 +6,7 @@ import 'core/di/locator.dart';
 import 'core/router/app_router.dart';
 import 'core/theme/app_theme.dart';
 import 'data/storage/app_prefs.dart';
+import 'domain/repositories/extension_manager.dart';
 import 'domain/repositories/extension_repository.dart';
 
 Future<void> main() async {
@@ -25,7 +26,10 @@ class MimasuApp extends StatelessWidget {
     // count, and the Extensions screen is pushed from either, so its state
     // has to outlive any single route.
     return BlocProvider(
-      create: (_) => ExtensionsCubit(locator<ExtensionRepository>())..start(),
+      create: (_) => ExtensionsCubit(
+          locator<ExtensionRepository>(),
+          locator<ExtensionManager>(),
+        )..start(),
       child: MaterialApp.router(
         title: 'Mimasu',
         debugShowCheckedModeBanner: false,

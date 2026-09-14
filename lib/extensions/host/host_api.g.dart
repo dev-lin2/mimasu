@@ -203,6 +203,70 @@ class FetchResult {
   }
 }
 
+/// What an APK on disk declares about itself, read before installing.
+class ApkInfo {
+  ApkInfo({
+    required this.ok,
+    required this.packageName,
+    required this.label,
+    required this.versionName,
+    required this.versionCode,
+    required this.signatureSha256,
+    required this.features,
+    required this.metadata,
+    this.error,
+  });
+
+  bool ok;
+
+  String packageName;
+
+  String label;
+
+  String versionName;
+
+  int versionCode;
+
+  /// Lowercase hex, no separators, so it compares directly against the key a
+  /// repository index declares.
+  String signatureSha256;
+
+  List<String?> features;
+
+  Map<String?, String?> metadata;
+
+  String? error;
+
+  Object encode() {
+    return <Object?>[
+      ok,
+      packageName,
+      label,
+      versionName,
+      versionCode,
+      signatureSha256,
+      features,
+      metadata,
+      error,
+    ];
+  }
+
+  static ApkInfo decode(Object result) {
+    result as List<Object?>;
+    return ApkInfo(
+      ok: result[0]! as bool,
+      packageName: result[1]! as String,
+      label: result[2]! as String,
+      versionName: result[3]! as String,
+      versionCode: result[4]! as int,
+      signatureSha256: result[5]! as String,
+      features: (result[6] as List<Object?>?)!.cast<String?>(),
+      metadata: (result[7] as Map<Object?, Object?>?)!.cast<String?, String?>(),
+      error: result[8] as String?,
+    );
+  }
+}
+
 /// A source instance the host managed to load, interrogated through the
 /// shim interfaces.
 class LoadedSource {
@@ -342,11 +406,14 @@ class _PigeonCodec extends StandardMessageCodec {
     }    else if (value is FetchResult) {
       buffer.putUint8(132);
       writeValue(buffer, value.encode());
-    }    else if (value is LoadedSource) {
+    }    else if (value is ApkInfo) {
       buffer.putUint8(133);
       writeValue(buffer, value.encode());
-    }    else if (value is ClassProbeResult) {
+    }    else if (value is LoadedSource) {
       buffer.putUint8(134);
+      writeValue(buffer, value.encode());
+    }    else if (value is ClassProbeResult) {
+      buffer.putUint8(135);
       writeValue(buffer, value.encode());
     } else {
       super.writeValue(buffer, value);
@@ -365,8 +432,10 @@ class _PigeonCodec extends StandardMessageCodec {
       case 132: 
         return FetchResult.decode(readValue(buffer)!);
       case 133: 
-        return LoadedSource.decode(readValue(buffer)!);
+        return ApkInfo.decode(readValue(buffer)!);
       case 134: 
+        return LoadedSource.decode(readValue(buffer)!);
+      case 135: 
         return ClassProbeResult.decode(readValue(buffer)!);
       default:
         return super.readValueOfType(type, buffer);
@@ -590,6 +659,94 @@ class ExtensionHostApi {
       );
     } else {
       return (pigeonVar_replyList[0] as String?)!;
+    }
+  }
+
+  /// Reads an APK on disk without installing it: package, version, signing
+  /// key and manifest metadata. This is what the trust prompt is built from
+  /// (INSTRUCTIONS.md 5.5) — the key must be checked BEFORE install.
+  Future<ApkInfo> inspectApk(String filePath) async {
+    final String pigeonVar_channelName = 'dev.flutter.pigeon.mimasu.ExtensionHostApi.inspectApk$pigeonVar_messageChannelSuffix';
+    final BasicMessageChannel<Object?> pigeonVar_channel = BasicMessageChannel<Object?>(
+      pigeonVar_channelName,
+      pigeonChannelCodec,
+      binaryMessenger: pigeonVar_binaryMessenger,
+    );
+    final List<Object?>? pigeonVar_replyList =
+        await pigeonVar_channel.send(<Object?>[filePath]) as List<Object?>?;
+    if (pigeonVar_replyList == null) {
+      throw _createConnectionError(pigeonVar_channelName);
+    } else if (pigeonVar_replyList.length > 1) {
+      throw PlatformException(
+        code: pigeonVar_replyList[0]! as String,
+        message: pigeonVar_replyList[1] as String?,
+        details: pigeonVar_replyList[2],
+      );
+    } else if (pigeonVar_replyList[0] == null) {
+      throw PlatformException(
+        code: 'null-error',
+        message: 'Host platform returned null value for non-null return value.',
+      );
+    } else {
+      return (pigeonVar_replyList[0] as ApkInfo?)!;
+    }
+  }
+
+  /// Hands the APK to the system package installer. Returns false if no
+  /// installer could be launched. Android, not Mimasu, performs the install
+  /// and shows its own confirmation.
+  Future<bool> installApk(String filePath) async {
+    final String pigeonVar_channelName = 'dev.flutter.pigeon.mimasu.ExtensionHostApi.installApk$pigeonVar_messageChannelSuffix';
+    final BasicMessageChannel<Object?> pigeonVar_channel = BasicMessageChannel<Object?>(
+      pigeonVar_channelName,
+      pigeonChannelCodec,
+      binaryMessenger: pigeonVar_binaryMessenger,
+    );
+    final List<Object?>? pigeonVar_replyList =
+        await pigeonVar_channel.send(<Object?>[filePath]) as List<Object?>?;
+    if (pigeonVar_replyList == null) {
+      throw _createConnectionError(pigeonVar_channelName);
+    } else if (pigeonVar_replyList.length > 1) {
+      throw PlatformException(
+        code: pigeonVar_replyList[0]! as String,
+        message: pigeonVar_replyList[1] as String?,
+        details: pigeonVar_replyList[2],
+      );
+    } else if (pigeonVar_replyList[0] == null) {
+      throw PlatformException(
+        code: 'null-error',
+        message: 'Host platform returned null value for non-null return value.',
+      );
+    } else {
+      return (pigeonVar_replyList[0] as bool?)!;
+    }
+  }
+
+  /// Launches the system uninstall prompt for an installed extension.
+  Future<bool> uninstallPackage(String packageName) async {
+    final String pigeonVar_channelName = 'dev.flutter.pigeon.mimasu.ExtensionHostApi.uninstallPackage$pigeonVar_messageChannelSuffix';
+    final BasicMessageChannel<Object?> pigeonVar_channel = BasicMessageChannel<Object?>(
+      pigeonVar_channelName,
+      pigeonChannelCodec,
+      binaryMessenger: pigeonVar_binaryMessenger,
+    );
+    final List<Object?>? pigeonVar_replyList =
+        await pigeonVar_channel.send(<Object?>[packageName]) as List<Object?>?;
+    if (pigeonVar_replyList == null) {
+      throw _createConnectionError(pigeonVar_channelName);
+    } else if (pigeonVar_replyList.length > 1) {
+      throw PlatformException(
+        code: pigeonVar_replyList[0]! as String,
+        message: pigeonVar_replyList[1] as String?,
+        details: pigeonVar_replyList[2],
+      );
+    } else if (pigeonVar_replyList[0] == null) {
+      throw PlatformException(
+        code: 'null-error',
+        message: 'Host platform returned null value for non-null return value.',
+      );
+    } else {
+      return (pigeonVar_replyList[0] as bool?)!;
     }
   }
 

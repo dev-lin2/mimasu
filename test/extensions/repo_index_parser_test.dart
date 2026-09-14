@@ -83,9 +83,11 @@ void main() {
         _fixture('keiyoushi_index.min.json'),
         baseUrl: 'https://example.test/repo/index.min.json',
       );
+      // Confirmed against real repositories: APKs live under apk/, not
+      // beside the index.
       expect(
         index.extensions.first.apkUrl,
-        'https://example.test/repo/tachiyomi-all.keiyoushi-v1.4.1.apk',
+        'https://example.test/repo/apk/tachiyomi-all.keiyoushi-v1.4.1.apk',
       );
     });
 

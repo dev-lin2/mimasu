@@ -1,0 +1,10 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  The package installer reads the downloaded APK through a content:// URI, so
+  the directory extensions are downloaded into has to be shared here
+  (INSTRUCTIONS.md 5.4).
+-->
+<paths>
+    <cache-path name="extension_apks" path="extensions/" />
+    <files-path name="extension_files" path="extensions/" />
+</paths>

@@ -23,11 +23,15 @@ class RepoIndexException implements Exception {
 
 /// `extensions-lib` major versions this build can host.
 ///
-/// VERIFY: the observed values in a manga repository were "1.4" and "1.6". The
-/// anime-side range is unknown until Phase 0 completes against a real anime
-/// extension, so nothing is refused on this basis yet — see
-/// [ExtensionEntry.libVersion].
-const supportedLibMajors = <int>{1};
+/// Confirmed in the wild: manga extensions report 1.4 and 1.6; **anime
+/// extensions report 14 and 16**, an entirely different numbering. An earlier
+/// value of `{1}` here would have refused every anime extension the moment lib
+/// checking was switched on.
+///
+/// Nothing is refused on this basis yet, because the shim is written against
+/// what real extensions of both generations actually reference rather than
+/// against a version number.
+const supportedLibMajors = <int>{1, 14, 15, 16};
 
 class RepoIndexParser {
   const RepoIndexParser();
@@ -132,12 +136,23 @@ class RepoIndexParser {
     return out;
   }
 
-  /// JSON indexes give a bare APK filename relative to the index URL.
+  /// JSON indexes give a bare APK filename, and the file lives in an `apk/`
+  /// directory beside the index — not next to it.
+  ///
+  /// Confirmed against two real anime repositories: `.../repo/index.min.json`
+  /// lists `aniyomi-all.animeonsen-v14.10.apk`, which resolves to
+  /// `.../repo/apk/aniyomi-all.animeonsen-v14.10.apk`. Resolving it beside the
+  /// index gives a 404.
+  ///
+  /// A name that already contains a slash is taken as given, so a repository
+  /// laying its files out differently still works.
   String _resolve(String apk, String? baseUrl) {
     if (apk.startsWith('http://') || apk.startsWith('https://')) return apk;
     if (baseUrl == null) return apk;
     final cut = baseUrl.lastIndexOf('/');
-    return cut < 0 ? apk : '${baseUrl.substring(0, cut + 1)}$apk';
+    if (cut < 0) return apk;
+    final dir = baseUrl.substring(0, cut + 1);
+    return apk.contains('/') ? '$dir$apk' : '${dir}apk/$apk';
   }
 
   // ------------------------------------------------------------ protobuf

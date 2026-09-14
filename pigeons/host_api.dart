@@ -96,6 +96,35 @@ class FetchResult {
   final String? error;
 }
 
+/// What an APK on disk declares about itself, read before installing.
+class ApkInfo {
+  ApkInfo({
+    required this.ok,
+    required this.packageName,
+    required this.label,
+    required this.versionName,
+    required this.versionCode,
+    required this.signatureSha256,
+    required this.features,
+    required this.metadata,
+    required this.error,
+  });
+
+  final bool ok;
+  final String packageName;
+  final String label;
+  final String versionName;
+  final int versionCode;
+
+  /// Lowercase hex, no separators, so it compares directly against the key a
+  /// repository index declares.
+  final String signatureSha256;
+
+  final List<String?> features;
+  final Map<String?, String?> metadata;
+  final String? error;
+}
+
 /// A source instance the host managed to load, interrogated through the
 /// shim interfaces.
 class LoadedSource {
@@ -190,6 +219,19 @@ abstract class ExtensionHostApi {
   /// trust that site" — the only question a TLS failure leaves open.
   @async
   String hostHttpCheck(String url);
+
+  /// Reads an APK on disk without installing it: package, version, signing
+  /// key and manifest metadata. This is what the trust prompt is built from
+  /// (INSTRUCTIONS.md 5.5) — the key must be checked BEFORE install.
+  ApkInfo inspectApk(String filePath);
+
+  /// Hands the APK to the system package installer. Returns false if no
+  /// installer could be launched. Android, not Mimasu, performs the install
+  /// and shows its own confirmation.
+  bool installApk(String filePath);
+
+  /// Launches the system uninstall prompt for an installed extension.
+  bool uninstallPackage(String packageName);
 
   /// Hosts an extension has contacted through the client the host provides.
   /// Best-effort: an extension using its own client is not covered (5.7).

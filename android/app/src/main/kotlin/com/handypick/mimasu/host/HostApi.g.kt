@@ -201,6 +201,56 @@ data class FetchResult (
 }
 
 /**
+ * What an APK on disk declares about itself, read before installing.
+ *
+ * Generated class from Pigeon that represents data sent in messages.
+ */
+data class ApkInfo (
+  val ok: Boolean,
+  val packageName: String,
+  val label: String,
+  val versionName: String,
+  val versionCode: Long,
+  /**
+   * Lowercase hex, no separators, so it compares directly against the key a
+   * repository index declares.
+   */
+  val signatureSha256: String,
+  val features: List<String?>,
+  val metadata: Map<String?, String?>,
+  val error: String? = null
+)
+ {
+  companion object {
+    fun fromList(pigeonVar_list: List<Any?>): ApkInfo {
+      val ok = pigeonVar_list[0] as Boolean
+      val packageName = pigeonVar_list[1] as String
+      val label = pigeonVar_list[2] as String
+      val versionName = pigeonVar_list[3] as String
+      val versionCode = pigeonVar_list[4] as Long
+      val signatureSha256 = pigeonVar_list[5] as String
+      val features = pigeonVar_list[6] as List<String?>
+      val metadata = pigeonVar_list[7] as Map<String?, String?>
+      val error = pigeonVar_list[8] as String?
+      return ApkInfo(ok, packageName, label, versionName, versionCode, signatureSha256, features, metadata, error)
+    }
+  }
+  fun toList(): List<Any?> {
+    return listOf(
+      ok,
+      packageName,
+      label,
+      versionName,
+      versionCode,
+      signatureSha256,
+      features,
+      metadata,
+      error,
+    )
+  }
+}
+
+/**
  * A source instance the host managed to load, interrogated through the
  * shim interfaces.
  *
@@ -321,10 +371,15 @@ private open class HostApiPigeonCodec : StandardMessageCodec() {
       }
       133.toByte() -> {
         return (readValue(buffer) as? List<Any?>)?.let {
-          LoadedSource.fromList(it)
+          ApkInfo.fromList(it)
         }
       }
       134.toByte() -> {
+        return (readValue(buffer) as? List<Any?>)?.let {
+          LoadedSource.fromList(it)
+        }
+      }
+      135.toByte() -> {
         return (readValue(buffer) as? List<Any?>)?.let {
           ClassProbeResult.fromList(it)
         }
@@ -350,12 +405,16 @@ private open class HostApiPigeonCodec : StandardMessageCodec() {
         stream.write(132)
         writeValue(stream, value.toList())
       }
-      is LoadedSource -> {
+      is ApkInfo -> {
         stream.write(133)
         writeValue(stream, value.toList())
       }
-      is ClassProbeResult -> {
+      is LoadedSource -> {
         stream.write(134)
+        writeValue(stream, value.toList())
+      }
+      is ClassProbeResult -> {
+        stream.write(135)
         writeValue(stream, value.toList())
       }
       else -> super.writeValue(stream, value)
@@ -402,6 +461,20 @@ interface ExtensionHostApi {
    * trust that site" — the only question a TLS failure leaves open.
    */
   fun hostHttpCheck(url: String, callback: (Result<String>) -> Unit)
+  /**
+   * Reads an APK on disk without installing it: package, version, signing
+   * key and manifest metadata. This is what the trust prompt is built from
+   * (INSTRUCTIONS.md 5.5) — the key must be checked BEFORE install.
+   */
+  fun inspectApk(filePath: String): ApkInfo
+  /**
+   * Hands the APK to the system package installer. Returns false if no
+   * installer could be launched. Android, not Mimasu, performs the install
+   * and shows its own confirmation.
+   */
+  fun installApk(filePath: String): Boolean
+  /** Launches the system uninstall prompt for an installed extension. */
+  fun uninstallPackage(packageName: String): Boolean
   /**
    * Hosts an extension has contacted through the client the host provides.
    * Best-effort: an extension using its own client is not covered (5.7).
@@ -539,6 +612,57 @@ interface ExtensionHostApi {
                 reply.reply(wrapResult(data))
               }
             }
+          }
+        } else {
+          channel.setMessageHandler(null)
+        }
+      }
+      run {
+        val channel = BasicMessageChannel<Any?>(binaryMessenger, "dev.flutter.pigeon.mimasu.ExtensionHostApi.inspectApk$separatedMessageChannelSuffix", codec)
+        if (api != null) {
+          channel.setMessageHandler { message, reply ->
+            val args = message as List<Any?>
+            val filePathArg = args[0] as String
+            val wrapped: List<Any?> = try {
+              listOf(api.inspectApk(filePathArg))
+            } catch (exception: Throwable) {
+              wrapError(exception)
+            }
+            reply.reply(wrapped)
+          }
+        } else {
+          channel.setMessageHandler(null)
+        }
+      }
+      run {
+        val channel = BasicMessageChannel<Any?>(binaryMessenger, "dev.flutter.pigeon.mimasu.ExtensionHostApi.installApk$separatedMessageChannelSuffix", codec)
+        if (api != null) {
+          channel.setMessageHandler { message, reply ->
+            val args = message as List<Any?>
+            val filePathArg = args[0] as String
+            val wrapped: List<Any?> = try {
+              listOf(api.installApk(filePathArg))
+            } catch (exception: Throwable) {
+              wrapError(exception)
+            }
+            reply.reply(wrapped)
+          }
+        } else {
+          channel.setMessageHandler(null)
+        }
+      }
+      run {
+        val channel = BasicMessageChannel<Any?>(binaryMessenger, "dev.flutter.pigeon.mimasu.ExtensionHostApi.uninstallPackage$separatedMessageChannelSuffix", codec)
+        if (api != null) {
+          channel.setMessageHandler { message, reply ->
+            val args = message as List<Any?>
+            val packageNameArg = args[0] as String
+            val wrapped: List<Any?> = try {
+              listOf(api.uninstallPackage(packageNameArg))
+            } catch (exception: Throwable) {
+              wrapError(exception)
+            }
+            reply.reply(wrapped)
           }
         } else {
           channel.setMessageHandler(null)
