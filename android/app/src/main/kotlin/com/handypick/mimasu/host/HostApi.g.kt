@@ -46,6 +46,19 @@ class FlutterError (
   val details: Any? = null
 ) : Throwable()
 
+/** How the catalogue is being asked for. */
+enum class BrowseMode(val raw: Int) {
+  POPULAR(0),
+  LATEST(1),
+  SEARCH(2);
+
+  companion object {
+    fun ofRaw(raw: Int): BrowseMode? {
+      return values().firstOrNull { it.raw == raw }
+    }
+  }
+}
+
 /**
  * Basic environment facts, used to prove the channel round-trips before any
  * extension work is attempted.
@@ -346,42 +359,298 @@ data class ClassProbeResult (
     )
   }
 }
+
+/**
+ * One title as a source reported it. Only what `SAnime` carries: there is no
+ * metadata service underneath, so this is all the app will ever know.
+ *
+ * Generated class from Pigeon that represents data sent in messages.
+ */
+data class AnimeItem (
+  val url: String,
+  val title: String,
+  val thumbnailUrl: String? = null,
+  val description: String? = null,
+  val author: String? = null,
+  val genre: String? = null,
+  /** SAnime's status constants: 0 unknown, 1 ongoing, 2 completed, and so on. */
+  val status: Long
+)
+ {
+  companion object {
+    fun fromList(pigeonVar_list: List<Any?>): AnimeItem {
+      val url = pigeonVar_list[0] as String
+      val title = pigeonVar_list[1] as String
+      val thumbnailUrl = pigeonVar_list[2] as String?
+      val description = pigeonVar_list[3] as String?
+      val author = pigeonVar_list[4] as String?
+      val genre = pigeonVar_list[5] as String?
+      val status = pigeonVar_list[6] as Long
+      return AnimeItem(url, title, thumbnailUrl, description, author, genre, status)
+    }
+  }
+  fun toList(): List<Any?> {
+    return listOf(
+      url,
+      title,
+      thumbnailUrl,
+      description,
+      author,
+      genre,
+      status,
+    )
+  }
+}
+
+/** Generated class from Pigeon that represents data sent in messages. */
+data class EpisodeItem (
+  val url: String,
+  val name: String,
+  val episodeNumber: Double,
+  /** Epoch millis, 0 when the source did not say. */
+  val dateUpload: Long,
+  val scanlator: String? = null
+)
+ {
+  companion object {
+    fun fromList(pigeonVar_list: List<Any?>): EpisodeItem {
+      val url = pigeonVar_list[0] as String
+      val name = pigeonVar_list[1] as String
+      val episodeNumber = pigeonVar_list[2] as Double
+      val dateUpload = pigeonVar_list[3] as Long
+      val scanlator = pigeonVar_list[4] as String?
+      return EpisodeItem(url, name, episodeNumber, dateUpload, scanlator)
+    }
+  }
+  fun toList(): List<Any?> {
+    return listOf(
+      url,
+      name,
+      episodeNumber,
+      dateUpload,
+      scanlator,
+    )
+  }
+}
+
+/**
+ * A playable stream. [headers] matters: many sources 403 without a Referer,
+ * and section 8 requires passing them to the player.
+ *
+ * Generated class from Pigeon that represents data sent in messages.
+ */
+data class VideoItem (
+  val url: String,
+  val videoUrl: String? = null,
+  val quality: String,
+  val headers: Map<String?, String?>,
+  val subtitleUrls: List<String?>,
+  val audioUrls: List<String?>
+)
+ {
+  companion object {
+    fun fromList(pigeonVar_list: List<Any?>): VideoItem {
+      val url = pigeonVar_list[0] as String
+      val videoUrl = pigeonVar_list[1] as String?
+      val quality = pigeonVar_list[2] as String
+      val headers = pigeonVar_list[3] as Map<String?, String?>
+      val subtitleUrls = pigeonVar_list[4] as List<String?>
+      val audioUrls = pigeonVar_list[5] as List<String?>
+      return VideoItem(url, videoUrl, quality, headers, subtitleUrls, audioUrls)
+    }
+  }
+  fun toList(): List<Any?> {
+    return listOf(
+      url,
+      videoUrl,
+      quality,
+      headers,
+      subtitleUrls,
+      audioUrls,
+    )
+  }
+}
+
+/** Generated class from Pigeon that represents data sent in messages. */
+data class BrowseResult (
+  val ok: Boolean,
+  val sourceName: String,
+  val items: List<AnimeItem?>,
+  val hasNextPage: Boolean,
+  val millis: Long,
+  val error: String? = null
+)
+ {
+  companion object {
+    fun fromList(pigeonVar_list: List<Any?>): BrowseResult {
+      val ok = pigeonVar_list[0] as Boolean
+      val sourceName = pigeonVar_list[1] as String
+      val items = pigeonVar_list[2] as List<AnimeItem?>
+      val hasNextPage = pigeonVar_list[3] as Boolean
+      val millis = pigeonVar_list[4] as Long
+      val error = pigeonVar_list[5] as String?
+      return BrowseResult(ok, sourceName, items, hasNextPage, millis, error)
+    }
+  }
+  fun toList(): List<Any?> {
+    return listOf(
+      ok,
+      sourceName,
+      items,
+      hasNextPage,
+      millis,
+      error,
+    )
+  }
+}
+
+/** Generated class from Pigeon that represents data sent in messages. */
+data class DetailsResult (
+  val ok: Boolean,
+  val anime: AnimeItem? = null,
+  val error: String? = null
+)
+ {
+  companion object {
+    fun fromList(pigeonVar_list: List<Any?>): DetailsResult {
+      val ok = pigeonVar_list[0] as Boolean
+      val anime = pigeonVar_list[1] as AnimeItem?
+      val error = pigeonVar_list[2] as String?
+      return DetailsResult(ok, anime, error)
+    }
+  }
+  fun toList(): List<Any?> {
+    return listOf(
+      ok,
+      anime,
+      error,
+    )
+  }
+}
+
+/** Generated class from Pigeon that represents data sent in messages. */
+data class EpisodesResult (
+  val ok: Boolean,
+  val items: List<EpisodeItem?>,
+  val error: String? = null
+)
+ {
+  companion object {
+    fun fromList(pigeonVar_list: List<Any?>): EpisodesResult {
+      val ok = pigeonVar_list[0] as Boolean
+      val items = pigeonVar_list[1] as List<EpisodeItem?>
+      val error = pigeonVar_list[2] as String?
+      return EpisodesResult(ok, items, error)
+    }
+  }
+  fun toList(): List<Any?> {
+    return listOf(
+      ok,
+      items,
+      error,
+    )
+  }
+}
+
+/** Generated class from Pigeon that represents data sent in messages. */
+data class VideosResult (
+  val ok: Boolean,
+  val items: List<VideoItem?>,
+  val error: String? = null
+)
+ {
+  companion object {
+    fun fromList(pigeonVar_list: List<Any?>): VideosResult {
+      val ok = pigeonVar_list[0] as Boolean
+      val items = pigeonVar_list[1] as List<VideoItem?>
+      val error = pigeonVar_list[2] as String?
+      return VideosResult(ok, items, error)
+    }
+  }
+  fun toList(): List<Any?> {
+    return listOf(
+      ok,
+      items,
+      error,
+    )
+  }
+}
 private open class HostApiPigeonCodec : StandardMessageCodec() {
   override fun readValueOfType(type: Byte, buffer: ByteBuffer): Any? {
     return when (type) {
       129.toByte() -> {
-        return (readValue(buffer) as? List<Any?>)?.let {
-          HostInfo.fromList(it)
+        return (readValue(buffer) as Long?)?.let {
+          BrowseMode.ofRaw(it.toInt())
         }
       }
       130.toByte() -> {
         return (readValue(buffer) as? List<Any?>)?.let {
-          ExtensionCandidate.fromList(it)
+          HostInfo.fromList(it)
         }
       }
       131.toByte() -> {
         return (readValue(buffer) as? List<Any?>)?.let {
-          FetchedAnime.fromList(it)
+          ExtensionCandidate.fromList(it)
         }
       }
       132.toByte() -> {
         return (readValue(buffer) as? List<Any?>)?.let {
-          FetchResult.fromList(it)
+          FetchedAnime.fromList(it)
         }
       }
       133.toByte() -> {
         return (readValue(buffer) as? List<Any?>)?.let {
-          ApkInfo.fromList(it)
+          FetchResult.fromList(it)
         }
       }
       134.toByte() -> {
         return (readValue(buffer) as? List<Any?>)?.let {
-          LoadedSource.fromList(it)
+          ApkInfo.fromList(it)
         }
       }
       135.toByte() -> {
         return (readValue(buffer) as? List<Any?>)?.let {
+          LoadedSource.fromList(it)
+        }
+      }
+      136.toByte() -> {
+        return (readValue(buffer) as? List<Any?>)?.let {
           ClassProbeResult.fromList(it)
+        }
+      }
+      137.toByte() -> {
+        return (readValue(buffer) as? List<Any?>)?.let {
+          AnimeItem.fromList(it)
+        }
+      }
+      138.toByte() -> {
+        return (readValue(buffer) as? List<Any?>)?.let {
+          EpisodeItem.fromList(it)
+        }
+      }
+      139.toByte() -> {
+        return (readValue(buffer) as? List<Any?>)?.let {
+          VideoItem.fromList(it)
+        }
+      }
+      140.toByte() -> {
+        return (readValue(buffer) as? List<Any?>)?.let {
+          BrowseResult.fromList(it)
+        }
+      }
+      141.toByte() -> {
+        return (readValue(buffer) as? List<Any?>)?.let {
+          DetailsResult.fromList(it)
+        }
+      }
+      142.toByte() -> {
+        return (readValue(buffer) as? List<Any?>)?.let {
+          EpisodesResult.fromList(it)
+        }
+      }
+      143.toByte() -> {
+        return (readValue(buffer) as? List<Any?>)?.let {
+          VideosResult.fromList(it)
         }
       }
       else -> super.readValueOfType(type, buffer)
@@ -389,32 +658,64 @@ private open class HostApiPigeonCodec : StandardMessageCodec() {
   }
   override fun writeValue(stream: ByteArrayOutputStream, value: Any?)   {
     when (value) {
-      is HostInfo -> {
+      is BrowseMode -> {
         stream.write(129)
-        writeValue(stream, value.toList())
+        writeValue(stream, value.raw)
       }
-      is ExtensionCandidate -> {
+      is HostInfo -> {
         stream.write(130)
         writeValue(stream, value.toList())
       }
-      is FetchedAnime -> {
+      is ExtensionCandidate -> {
         stream.write(131)
         writeValue(stream, value.toList())
       }
-      is FetchResult -> {
+      is FetchedAnime -> {
         stream.write(132)
         writeValue(stream, value.toList())
       }
-      is ApkInfo -> {
+      is FetchResult -> {
         stream.write(133)
         writeValue(stream, value.toList())
       }
-      is LoadedSource -> {
+      is ApkInfo -> {
         stream.write(134)
         writeValue(stream, value.toList())
       }
-      is ClassProbeResult -> {
+      is LoadedSource -> {
         stream.write(135)
+        writeValue(stream, value.toList())
+      }
+      is ClassProbeResult -> {
+        stream.write(136)
+        writeValue(stream, value.toList())
+      }
+      is AnimeItem -> {
+        stream.write(137)
+        writeValue(stream, value.toList())
+      }
+      is EpisodeItem -> {
+        stream.write(138)
+        writeValue(stream, value.toList())
+      }
+      is VideoItem -> {
+        stream.write(139)
+        writeValue(stream, value.toList())
+      }
+      is BrowseResult -> {
+        stream.write(140)
+        writeValue(stream, value.toList())
+      }
+      is DetailsResult -> {
+        stream.write(141)
+        writeValue(stream, value.toList())
+      }
+      is EpisodesResult -> {
+        stream.write(142)
+        writeValue(stream, value.toList())
+      }
+      is VideosResult -> {
+        stream.write(143)
         writeValue(stream, value.toList())
       }
       else -> super.writeValue(stream, value)
@@ -692,6 +993,141 @@ interface ExtensionHostApi {
             val classNamesArg = args[1] as List<String?>
             val wrapped: List<Any?> = try {
               listOf(api.probeClasses(packageNameArg, classNamesArg))
+            } catch (exception: Throwable) {
+              wrapError(exception)
+            }
+            reply.reply(wrapped)
+          }
+        } else {
+          channel.setMessageHandler(null)
+        }
+      }
+    }
+  }
+}
+/**
+ * Browsing and playback through a loaded source.
+ *
+ * Every method is async: extension code performs network work, which Android
+ * refuses on the platform thread that Pigeon dispatches host calls on.
+ *
+ * Generated interface from Pigeon that represents a handler of messages from Flutter.
+ */
+interface SourceApi {
+  /** One page of titles. [query] is ignored unless [mode] is search. */
+  fun browse(packageName: String, className: String, mode: BrowseMode, page: Long, query: String, callback: (Result<BrowseResult>) -> Unit)
+  fun animeDetails(packageName: String, className: String, animeUrl: String, callback: (Result<DetailsResult>) -> Unit)
+  fun episodes(packageName: String, className: String, animeUrl: String, callback: (Result<EpisodesResult>) -> Unit)
+  fun videos(packageName: String, className: String, episodeUrl: String, callback: (Result<VideosResult>) -> Unit)
+  /** Drops cached source instances, e.g. after an extension is updated. */
+  fun clearSourceCache()
+
+  companion object {
+    /** The codec used by SourceApi. */
+    val codec: MessageCodec<Any?> by lazy {
+      HostApiPigeonCodec()
+    }
+    /** Sets up an instance of `SourceApi` to handle messages through the `binaryMessenger`. */
+    @JvmOverloads
+    fun setUp(binaryMessenger: BinaryMessenger, api: SourceApi?, messageChannelSuffix: String = "") {
+      val separatedMessageChannelSuffix = if (messageChannelSuffix.isNotEmpty()) ".$messageChannelSuffix" else ""
+      run {
+        val channel = BasicMessageChannel<Any?>(binaryMessenger, "dev.flutter.pigeon.mimasu.SourceApi.browse$separatedMessageChannelSuffix", codec)
+        if (api != null) {
+          channel.setMessageHandler { message, reply ->
+            val args = message as List<Any?>
+            val packageNameArg = args[0] as String
+            val classNameArg = args[1] as String
+            val modeArg = args[2] as BrowseMode
+            val pageArg = args[3] as Long
+            val queryArg = args[4] as String
+            api.browse(packageNameArg, classNameArg, modeArg, pageArg, queryArg) { result: Result<BrowseResult> ->
+              val error = result.exceptionOrNull()
+              if (error != null) {
+                reply.reply(wrapError(error))
+              } else {
+                val data = result.getOrNull()
+                reply.reply(wrapResult(data))
+              }
+            }
+          }
+        } else {
+          channel.setMessageHandler(null)
+        }
+      }
+      run {
+        val channel = BasicMessageChannel<Any?>(binaryMessenger, "dev.flutter.pigeon.mimasu.SourceApi.animeDetails$separatedMessageChannelSuffix", codec)
+        if (api != null) {
+          channel.setMessageHandler { message, reply ->
+            val args = message as List<Any?>
+            val packageNameArg = args[0] as String
+            val classNameArg = args[1] as String
+            val animeUrlArg = args[2] as String
+            api.animeDetails(packageNameArg, classNameArg, animeUrlArg) { result: Result<DetailsResult> ->
+              val error = result.exceptionOrNull()
+              if (error != null) {
+                reply.reply(wrapError(error))
+              } else {
+                val data = result.getOrNull()
+                reply.reply(wrapResult(data))
+              }
+            }
+          }
+        } else {
+          channel.setMessageHandler(null)
+        }
+      }
+      run {
+        val channel = BasicMessageChannel<Any?>(binaryMessenger, "dev.flutter.pigeon.mimasu.SourceApi.episodes$separatedMessageChannelSuffix", codec)
+        if (api != null) {
+          channel.setMessageHandler { message, reply ->
+            val args = message as List<Any?>
+            val packageNameArg = args[0] as String
+            val classNameArg = args[1] as String
+            val animeUrlArg = args[2] as String
+            api.episodes(packageNameArg, classNameArg, animeUrlArg) { result: Result<EpisodesResult> ->
+              val error = result.exceptionOrNull()
+              if (error != null) {
+                reply.reply(wrapError(error))
+              } else {
+                val data = result.getOrNull()
+                reply.reply(wrapResult(data))
+              }
+            }
+          }
+        } else {
+          channel.setMessageHandler(null)
+        }
+      }
+      run {
+        val channel = BasicMessageChannel<Any?>(binaryMessenger, "dev.flutter.pigeon.mimasu.SourceApi.videos$separatedMessageChannelSuffix", codec)
+        if (api != null) {
+          channel.setMessageHandler { message, reply ->
+            val args = message as List<Any?>
+            val packageNameArg = args[0] as String
+            val classNameArg = args[1] as String
+            val episodeUrlArg = args[2] as String
+            api.videos(packageNameArg, classNameArg, episodeUrlArg) { result: Result<VideosResult> ->
+              val error = result.exceptionOrNull()
+              if (error != null) {
+                reply.reply(wrapError(error))
+              } else {
+                val data = result.getOrNull()
+                reply.reply(wrapResult(data))
+              }
+            }
+          }
+        } else {
+          channel.setMessageHandler(null)
+        }
+      }
+      run {
+        val channel = BasicMessageChannel<Any?>(binaryMessenger, "dev.flutter.pigeon.mimasu.SourceApi.clearSourceCache$separatedMessageChannelSuffix", codec)
+        if (api != null) {
+          channel.setMessageHandler { _, reply ->
+            val wrapped: List<Any?> = try {
+              api.clearSourceCache()
+              listOf(null)
             } catch (exception: Throwable) {
               wrapError(exception)
             }

@@ -15,6 +15,13 @@ PlatformException _createConnectionError(String channelName) {
   );
 }
 
+/// How the catalogue is being asked for.
+enum BrowseMode {
+  popular,
+  latest,
+  search,
+}
+
 /// Basic environment facts, used to prove the channel round-trips before any
 /// extension work is attempted.
 class HostInfo {
@@ -386,6 +393,289 @@ class ClassProbeResult {
   }
 }
 
+/// One title as a source reported it. Only what `SAnime` carries: there is no
+/// metadata service underneath, so this is all the app will ever know.
+class AnimeItem {
+  AnimeItem({
+    required this.url,
+    required this.title,
+    this.thumbnailUrl,
+    this.description,
+    this.author,
+    this.genre,
+    required this.status,
+  });
+
+  String url;
+
+  String title;
+
+  String? thumbnailUrl;
+
+  String? description;
+
+  String? author;
+
+  String? genre;
+
+  /// SAnime's status constants: 0 unknown, 1 ongoing, 2 completed, and so on.
+  int status;
+
+  Object encode() {
+    return <Object?>[
+      url,
+      title,
+      thumbnailUrl,
+      description,
+      author,
+      genre,
+      status,
+    ];
+  }
+
+  static AnimeItem decode(Object result) {
+    result as List<Object?>;
+    return AnimeItem(
+      url: result[0]! as String,
+      title: result[1]! as String,
+      thumbnailUrl: result[2] as String?,
+      description: result[3] as String?,
+      author: result[4] as String?,
+      genre: result[5] as String?,
+      status: result[6]! as int,
+    );
+  }
+}
+
+class EpisodeItem {
+  EpisodeItem({
+    required this.url,
+    required this.name,
+    required this.episodeNumber,
+    required this.dateUpload,
+    this.scanlator,
+  });
+
+  String url;
+
+  String name;
+
+  double episodeNumber;
+
+  /// Epoch millis, 0 when the source did not say.
+  int dateUpload;
+
+  String? scanlator;
+
+  Object encode() {
+    return <Object?>[
+      url,
+      name,
+      episodeNumber,
+      dateUpload,
+      scanlator,
+    ];
+  }
+
+  static EpisodeItem decode(Object result) {
+    result as List<Object?>;
+    return EpisodeItem(
+      url: result[0]! as String,
+      name: result[1]! as String,
+      episodeNumber: result[2]! as double,
+      dateUpload: result[3]! as int,
+      scanlator: result[4] as String?,
+    );
+  }
+}
+
+/// A playable stream. [headers] matters: many sources 403 without a Referer,
+/// and section 8 requires passing them to the player.
+class VideoItem {
+  VideoItem({
+    required this.url,
+    this.videoUrl,
+    required this.quality,
+    required this.headers,
+    required this.subtitleUrls,
+    required this.audioUrls,
+  });
+
+  String url;
+
+  String? videoUrl;
+
+  String quality;
+
+  Map<String?, String?> headers;
+
+  List<String?> subtitleUrls;
+
+  List<String?> audioUrls;
+
+  Object encode() {
+    return <Object?>[
+      url,
+      videoUrl,
+      quality,
+      headers,
+      subtitleUrls,
+      audioUrls,
+    ];
+  }
+
+  static VideoItem decode(Object result) {
+    result as List<Object?>;
+    return VideoItem(
+      url: result[0]! as String,
+      videoUrl: result[1] as String?,
+      quality: result[2]! as String,
+      headers: (result[3] as Map<Object?, Object?>?)!.cast<String?, String?>(),
+      subtitleUrls: (result[4] as List<Object?>?)!.cast<String?>(),
+      audioUrls: (result[5] as List<Object?>?)!.cast<String?>(),
+    );
+  }
+}
+
+class BrowseResult {
+  BrowseResult({
+    required this.ok,
+    required this.sourceName,
+    required this.items,
+    required this.hasNextPage,
+    required this.millis,
+    this.error,
+  });
+
+  bool ok;
+
+  String sourceName;
+
+  List<AnimeItem?> items;
+
+  bool hasNextPage;
+
+  int millis;
+
+  String? error;
+
+  Object encode() {
+    return <Object?>[
+      ok,
+      sourceName,
+      items,
+      hasNextPage,
+      millis,
+      error,
+    ];
+  }
+
+  static BrowseResult decode(Object result) {
+    result as List<Object?>;
+    return BrowseResult(
+      ok: result[0]! as bool,
+      sourceName: result[1]! as String,
+      items: (result[2] as List<Object?>?)!.cast<AnimeItem?>(),
+      hasNextPage: result[3]! as bool,
+      millis: result[4]! as int,
+      error: result[5] as String?,
+    );
+  }
+}
+
+class DetailsResult {
+  DetailsResult({
+    required this.ok,
+    this.anime,
+    this.error,
+  });
+
+  bool ok;
+
+  AnimeItem? anime;
+
+  String? error;
+
+  Object encode() {
+    return <Object?>[
+      ok,
+      anime,
+      error,
+    ];
+  }
+
+  static DetailsResult decode(Object result) {
+    result as List<Object?>;
+    return DetailsResult(
+      ok: result[0]! as bool,
+      anime: result[1] as AnimeItem?,
+      error: result[2] as String?,
+    );
+  }
+}
+
+class EpisodesResult {
+  EpisodesResult({
+    required this.ok,
+    required this.items,
+    this.error,
+  });
+
+  bool ok;
+
+  List<EpisodeItem?> items;
+
+  String? error;
+
+  Object encode() {
+    return <Object?>[
+      ok,
+      items,
+      error,
+    ];
+  }
+
+  static EpisodesResult decode(Object result) {
+    result as List<Object?>;
+    return EpisodesResult(
+      ok: result[0]! as bool,
+      items: (result[1] as List<Object?>?)!.cast<EpisodeItem?>(),
+      error: result[2] as String?,
+    );
+  }
+}
+
+class VideosResult {
+  VideosResult({
+    required this.ok,
+    required this.items,
+    this.error,
+  });
+
+  bool ok;
+
+  List<VideoItem?> items;
+
+  String? error;
+
+  Object encode() {
+    return <Object?>[
+      ok,
+      items,
+      error,
+    ];
+  }
+
+  static VideosResult decode(Object result) {
+    result as List<Object?>;
+    return VideosResult(
+      ok: result[0]! as bool,
+      items: (result[1] as List<Object?>?)!.cast<VideoItem?>(),
+      error: result[2] as String?,
+    );
+  }
+}
+
 
 class _PigeonCodec extends StandardMessageCodec {
   const _PigeonCodec();
@@ -394,26 +684,50 @@ class _PigeonCodec extends StandardMessageCodec {
     if (value is int) {
       buffer.putUint8(4);
       buffer.putInt64(value);
-    }    else if (value is HostInfo) {
+    }    else if (value is BrowseMode) {
       buffer.putUint8(129);
-      writeValue(buffer, value.encode());
-    }    else if (value is ExtensionCandidate) {
+      writeValue(buffer, value.index);
+    }    else if (value is HostInfo) {
       buffer.putUint8(130);
       writeValue(buffer, value.encode());
-    }    else if (value is FetchedAnime) {
+    }    else if (value is ExtensionCandidate) {
       buffer.putUint8(131);
       writeValue(buffer, value.encode());
-    }    else if (value is FetchResult) {
+    }    else if (value is FetchedAnime) {
       buffer.putUint8(132);
       writeValue(buffer, value.encode());
-    }    else if (value is ApkInfo) {
+    }    else if (value is FetchResult) {
       buffer.putUint8(133);
       writeValue(buffer, value.encode());
-    }    else if (value is LoadedSource) {
+    }    else if (value is ApkInfo) {
       buffer.putUint8(134);
       writeValue(buffer, value.encode());
-    }    else if (value is ClassProbeResult) {
+    }    else if (value is LoadedSource) {
       buffer.putUint8(135);
+      writeValue(buffer, value.encode());
+    }    else if (value is ClassProbeResult) {
+      buffer.putUint8(136);
+      writeValue(buffer, value.encode());
+    }    else if (value is AnimeItem) {
+      buffer.putUint8(137);
+      writeValue(buffer, value.encode());
+    }    else if (value is EpisodeItem) {
+      buffer.putUint8(138);
+      writeValue(buffer, value.encode());
+    }    else if (value is VideoItem) {
+      buffer.putUint8(139);
+      writeValue(buffer, value.encode());
+    }    else if (value is BrowseResult) {
+      buffer.putUint8(140);
+      writeValue(buffer, value.encode());
+    }    else if (value is DetailsResult) {
+      buffer.putUint8(141);
+      writeValue(buffer, value.encode());
+    }    else if (value is EpisodesResult) {
+      buffer.putUint8(142);
+      writeValue(buffer, value.encode());
+    }    else if (value is VideosResult) {
+      buffer.putUint8(143);
       writeValue(buffer, value.encode());
     } else {
       super.writeValue(buffer, value);
@@ -424,19 +738,36 @@ class _PigeonCodec extends StandardMessageCodec {
   Object? readValueOfType(int type, ReadBuffer buffer) {
     switch (type) {
       case 129: 
-        return HostInfo.decode(readValue(buffer)!);
+        final int? value = readValue(buffer) as int?;
+        return value == null ? null : BrowseMode.values[value];
       case 130: 
-        return ExtensionCandidate.decode(readValue(buffer)!);
+        return HostInfo.decode(readValue(buffer)!);
       case 131: 
-        return FetchedAnime.decode(readValue(buffer)!);
+        return ExtensionCandidate.decode(readValue(buffer)!);
       case 132: 
-        return FetchResult.decode(readValue(buffer)!);
+        return FetchedAnime.decode(readValue(buffer)!);
       case 133: 
-        return ApkInfo.decode(readValue(buffer)!);
+        return FetchResult.decode(readValue(buffer)!);
       case 134: 
-        return LoadedSource.decode(readValue(buffer)!);
+        return ApkInfo.decode(readValue(buffer)!);
       case 135: 
+        return LoadedSource.decode(readValue(buffer)!);
+      case 136: 
         return ClassProbeResult.decode(readValue(buffer)!);
+      case 137: 
+        return AnimeItem.decode(readValue(buffer)!);
+      case 138: 
+        return EpisodeItem.decode(readValue(buffer)!);
+      case 139: 
+        return VideoItem.decode(readValue(buffer)!);
+      case 140: 
+        return BrowseResult.decode(readValue(buffer)!);
+      case 141: 
+        return DetailsResult.decode(readValue(buffer)!);
+      case 142: 
+        return EpisodesResult.decode(readValue(buffer)!);
+      case 143: 
+        return VideosResult.decode(readValue(buffer)!);
       default:
         return super.readValueOfType(type, buffer);
     }
@@ -805,6 +1136,156 @@ class ExtensionHostApi {
       );
     } else {
       return (pigeonVar_replyList[0] as List<Object?>?)!.cast<ClassProbeResult?>();
+    }
+  }
+}
+
+/// Browsing and playback through a loaded source.
+///
+/// Every method is async: extension code performs network work, which Android
+/// refuses on the platform thread that Pigeon dispatches host calls on.
+class SourceApi {
+  /// Constructor for [SourceApi].  The [binaryMessenger] named argument is
+  /// available for dependency injection.  If it is left null, the default
+  /// BinaryMessenger will be used which routes to the host platform.
+  SourceApi({BinaryMessenger? binaryMessenger, String messageChannelSuffix = ''})
+      : pigeonVar_binaryMessenger = binaryMessenger,
+        pigeonVar_messageChannelSuffix = messageChannelSuffix.isNotEmpty ? '.$messageChannelSuffix' : '';
+  final BinaryMessenger? pigeonVar_binaryMessenger;
+
+  static const MessageCodec<Object?> pigeonChannelCodec = _PigeonCodec();
+
+  final String pigeonVar_messageChannelSuffix;
+
+  /// One page of titles. [query] is ignored unless [mode] is search.
+  Future<BrowseResult> browse(String packageName, String className, BrowseMode mode, int page, String query) async {
+    final String pigeonVar_channelName = 'dev.flutter.pigeon.mimasu.SourceApi.browse$pigeonVar_messageChannelSuffix';
+    final BasicMessageChannel<Object?> pigeonVar_channel = BasicMessageChannel<Object?>(
+      pigeonVar_channelName,
+      pigeonChannelCodec,
+      binaryMessenger: pigeonVar_binaryMessenger,
+    );
+    final List<Object?>? pigeonVar_replyList =
+        await pigeonVar_channel.send(<Object?>[packageName, className, mode, page, query]) as List<Object?>?;
+    if (pigeonVar_replyList == null) {
+      throw _createConnectionError(pigeonVar_channelName);
+    } else if (pigeonVar_replyList.length > 1) {
+      throw PlatformException(
+        code: pigeonVar_replyList[0]! as String,
+        message: pigeonVar_replyList[1] as String?,
+        details: pigeonVar_replyList[2],
+      );
+    } else if (pigeonVar_replyList[0] == null) {
+      throw PlatformException(
+        code: 'null-error',
+        message: 'Host platform returned null value for non-null return value.',
+      );
+    } else {
+      return (pigeonVar_replyList[0] as BrowseResult?)!;
+    }
+  }
+
+  Future<DetailsResult> animeDetails(String packageName, String className, String animeUrl) async {
+    final String pigeonVar_channelName = 'dev.flutter.pigeon.mimasu.SourceApi.animeDetails$pigeonVar_messageChannelSuffix';
+    final BasicMessageChannel<Object?> pigeonVar_channel = BasicMessageChannel<Object?>(
+      pigeonVar_channelName,
+      pigeonChannelCodec,
+      binaryMessenger: pigeonVar_binaryMessenger,
+    );
+    final List<Object?>? pigeonVar_replyList =
+        await pigeonVar_channel.send(<Object?>[packageName, className, animeUrl]) as List<Object?>?;
+    if (pigeonVar_replyList == null) {
+      throw _createConnectionError(pigeonVar_channelName);
+    } else if (pigeonVar_replyList.length > 1) {
+      throw PlatformException(
+        code: pigeonVar_replyList[0]! as String,
+        message: pigeonVar_replyList[1] as String?,
+        details: pigeonVar_replyList[2],
+      );
+    } else if (pigeonVar_replyList[0] == null) {
+      throw PlatformException(
+        code: 'null-error',
+        message: 'Host platform returned null value for non-null return value.',
+      );
+    } else {
+      return (pigeonVar_replyList[0] as DetailsResult?)!;
+    }
+  }
+
+  Future<EpisodesResult> episodes(String packageName, String className, String animeUrl) async {
+    final String pigeonVar_channelName = 'dev.flutter.pigeon.mimasu.SourceApi.episodes$pigeonVar_messageChannelSuffix';
+    final BasicMessageChannel<Object?> pigeonVar_channel = BasicMessageChannel<Object?>(
+      pigeonVar_channelName,
+      pigeonChannelCodec,
+      binaryMessenger: pigeonVar_binaryMessenger,
+    );
+    final List<Object?>? pigeonVar_replyList =
+        await pigeonVar_channel.send(<Object?>[packageName, className, animeUrl]) as List<Object?>?;
+    if (pigeonVar_replyList == null) {
+      throw _createConnectionError(pigeonVar_channelName);
+    } else if (pigeonVar_replyList.length > 1) {
+      throw PlatformException(
+        code: pigeonVar_replyList[0]! as String,
+        message: pigeonVar_replyList[1] as String?,
+        details: pigeonVar_replyList[2],
+      );
+    } else if (pigeonVar_replyList[0] == null) {
+      throw PlatformException(
+        code: 'null-error',
+        message: 'Host platform returned null value for non-null return value.',
+      );
+    } else {
+      return (pigeonVar_replyList[0] as EpisodesResult?)!;
+    }
+  }
+
+  Future<VideosResult> videos(String packageName, String className, String episodeUrl) async {
+    final String pigeonVar_channelName = 'dev.flutter.pigeon.mimasu.SourceApi.videos$pigeonVar_messageChannelSuffix';
+    final BasicMessageChannel<Object?> pigeonVar_channel = BasicMessageChannel<Object?>(
+      pigeonVar_channelName,
+      pigeonChannelCodec,
+      binaryMessenger: pigeonVar_binaryMessenger,
+    );
+    final List<Object?>? pigeonVar_replyList =
+        await pigeonVar_channel.send(<Object?>[packageName, className, episodeUrl]) as List<Object?>?;
+    if (pigeonVar_replyList == null) {
+      throw _createConnectionError(pigeonVar_channelName);
+    } else if (pigeonVar_replyList.length > 1) {
+      throw PlatformException(
+        code: pigeonVar_replyList[0]! as String,
+        message: pigeonVar_replyList[1] as String?,
+        details: pigeonVar_replyList[2],
+      );
+    } else if (pigeonVar_replyList[0] == null) {
+      throw PlatformException(
+        code: 'null-error',
+        message: 'Host platform returned null value for non-null return value.',
+      );
+    } else {
+      return (pigeonVar_replyList[0] as VideosResult?)!;
+    }
+  }
+
+  /// Drops cached source instances, e.g. after an extension is updated.
+  Future<void> clearSourceCache() async {
+    final String pigeonVar_channelName = 'dev.flutter.pigeon.mimasu.SourceApi.clearSourceCache$pigeonVar_messageChannelSuffix';
+    final BasicMessageChannel<Object?> pigeonVar_channel = BasicMessageChannel<Object?>(
+      pigeonVar_channelName,
+      pigeonChannelCodec,
+      binaryMessenger: pigeonVar_binaryMessenger,
+    );
+    final List<Object?>? pigeonVar_replyList =
+        await pigeonVar_channel.send(null) as List<Object?>?;
+    if (pigeonVar_replyList == null) {
+      throw _createConnectionError(pigeonVar_channelName);
+    } else if (pigeonVar_replyList.length > 1) {
+      throw PlatformException(
+        code: pigeonVar_replyList[0]! as String,
+        message: pigeonVar_replyList[1] as String?,
+        details: pigeonVar_replyList[2],
+      );
+    } else {
+      return;
     }
   }
 }

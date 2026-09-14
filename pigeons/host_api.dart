@@ -244,3 +244,150 @@ abstract class ExtensionHostApi {
     List<String?> classNames,
   );
 }
+
+// --- Browsing through a loaded source (INSTRUCTIONS.md section 5, Phase 2) ---
+
+/// One title as a source reported it. Only what `SAnime` carries: there is no
+/// metadata service underneath, so this is all the app will ever know.
+class AnimeItem {
+  AnimeItem({
+    required this.url,
+    required this.title,
+    required this.thumbnailUrl,
+    required this.description,
+    required this.author,
+    required this.genre,
+    required this.status,
+  });
+
+  final String url;
+  final String title;
+  final String? thumbnailUrl;
+  final String? description;
+  final String? author;
+  final String? genre;
+
+  /// SAnime's status constants: 0 unknown, 1 ongoing, 2 completed, and so on.
+  final int status;
+}
+
+class EpisodeItem {
+  EpisodeItem({
+    required this.url,
+    required this.name,
+    required this.episodeNumber,
+    required this.dateUpload,
+    required this.scanlator,
+  });
+
+  final String url;
+  final String name;
+  final double episodeNumber;
+
+  /// Epoch millis, 0 when the source did not say.
+  final int dateUpload;
+  final String? scanlator;
+}
+
+/// A playable stream. [headers] matters: many sources 403 without a Referer,
+/// and section 8 requires passing them to the player.
+class VideoItem {
+  VideoItem({
+    required this.url,
+    required this.videoUrl,
+    required this.quality,
+    required this.headers,
+    required this.subtitleUrls,
+    required this.audioUrls,
+  });
+
+  final String url;
+  final String? videoUrl;
+  final String quality;
+  final Map<String?, String?> headers;
+  final List<String?> subtitleUrls;
+  final List<String?> audioUrls;
+}
+
+/// How the catalogue is being asked for.
+enum BrowseMode { popular, latest, search }
+
+class BrowseResult {
+  BrowseResult({
+    required this.ok,
+    required this.sourceName,
+    required this.items,
+    required this.hasNextPage,
+    required this.millis,
+    required this.error,
+  });
+
+  final bool ok;
+  final String sourceName;
+  final List<AnimeItem?> items;
+  final bool hasNextPage;
+  final int millis;
+  final String? error;
+}
+
+class DetailsResult {
+  DetailsResult({required this.ok, required this.anime, required this.error});
+  final bool ok;
+  final AnimeItem? anime;
+  final String? error;
+}
+
+class EpisodesResult {
+  EpisodesResult({required this.ok, required this.items, required this.error});
+  final bool ok;
+  final List<EpisodeItem?> items;
+  final String? error;
+}
+
+class VideosResult {
+  VideosResult({required this.ok, required this.items, required this.error});
+  final bool ok;
+  final List<VideoItem?> items;
+  final String? error;
+}
+
+/// Browsing and playback through a loaded source.
+///
+/// Every method is async: extension code performs network work, which Android
+/// refuses on the platform thread that Pigeon dispatches host calls on.
+@HostApi()
+abstract class SourceApi {
+  /// One page of titles. [query] is ignored unless [mode] is search.
+  @async
+  BrowseResult browse(
+    String packageName,
+    String className,
+    BrowseMode mode,
+    int page,
+    String query,
+  );
+
+  @async
+  DetailsResult animeDetails(
+    String packageName,
+    String className,
+    String animeUrl,
+  );
+
+  @async
+  EpisodesResult episodes(
+    String packageName,
+    String className,
+    String animeUrl,
+  );
+
+  @async
+  VideosResult videos(
+    String packageName,
+    String className,
+    String episodeUrl,
+  );
+
+  /// Drops cached source instances, e.g. after an extension is updated.
+  void clearSourceCache();
+}

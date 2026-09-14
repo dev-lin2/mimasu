@@ -7,6 +7,8 @@ import '../../data/storage/app_prefs.dart';
 import '../../data/repositories/extension_manager_impl.dart';
 import '../../data/storage/repo_store.dart';
 import '../../data/storage/trust_store.dart';
+import '../../domain/repositories/content_source_repository.dart';
+import '../../extensions/content_source_native.dart';
 import '../../domain/repositories/extension_manager.dart';
 import '../../domain/repositories/extension_repository.dart';
 import '../services/http/repo_index_fetcher.dart';
@@ -21,6 +23,7 @@ Future<void> configureDependencies() async {
     ..registerLazySingleton<RepoStore>(() => store)
     ..registerLazySingleton<AppPrefs>(() => prefs)
     ..registerLazySingleton<TrustStore>(() => trust)
+    ..registerLazySingleton<ContentSourceRepository>(ContentSourceNative.new)
     ..registerLazySingleton<ExtensionManager>(
       () => ExtensionManagerImpl(trustStore: locator<TrustStore>()),
     )

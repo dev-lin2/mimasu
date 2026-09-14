@@ -1,7 +1,14 @@
 import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
 
+import 'package:flutter_bloc/flutter_bloc.dart';
+
+import '../../application/details/details_cubit.dart';
 import '../../data/storage/app_prefs.dart';
+import '../../domain/entities/source/anime.dart';
+import '../../domain/repositories/content_source_repository.dart';
+import '../../presentation/screens/details/details_screen.dart';
+import '../di/locator.dart';
 import '../../presentation/screens/downloads/downloads_screen.dart';
 import '../../presentation/screens/extensions/extensions_screen.dart';
 import '../../presentation/screens/help/add_source_guide_screen.dart';
@@ -90,6 +97,19 @@ GoRouter buildRouter(AppPrefs prefs) {
       GoRoute(
         path: '/install-permission',
         builder: (context, state) => const InstallPermissionScreen(),
+      ),
+      GoRoute(
+        path: '/details',
+        builder: (context, state) {
+          // The listing entry is passed through so the screen can render
+          // immediately while full details load.
+          final anime = state.extra as Anime;
+          return BlocProvider(
+            create: (_) =>
+                DetailsCubit(locator<ContentSourceRepository>(), anime),
+            child: const DetailsScreen(),
+          );
+        },
       ),
       GoRoute(
         path: '/host-probe',
