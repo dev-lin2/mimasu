@@ -93,6 +93,41 @@ abstract class AnimeHttpSource : AnimeCatalogueSource {
     open fun getAnimeUrl(anime: SAnime): String = baseUrl + anime.url
     open fun getEpisodeUrl(episode: SEpisode): String = baseUrl + episode.url
 
+    // --- url helpers sources rely on -------------------------------------
+    //
+    // Extensions store paths rather than absolute URLs so a source can change
+    // domain without invalidating everything saved against it. These are
+    // extension functions inside the class, which compile to virtual methods
+    // taking the receiver — `setUrlWithoutDomain(SAnime, String)` — which is
+    // exactly the symbol a real extension failed to find.
+
+    protected fun SAnime.setUrlWithoutDomain(url: String) {
+        this.url = takeUrlWithoutDomain(url)
+    }
+
+    protected fun SEpisode.setUrlWithoutDomain(url: String) {
+        this.url = takeUrlWithoutDomain(url)
+    }
+
+    /** Path, query and fragment; scheme and host dropped. */
+    protected fun takeUrlWithoutDomain(orig: String): String = try {
+        val uri = java.net.URI(orig)
+        buildString {
+            append(uri.rawPath.orEmpty())
+            uri.rawQuery?.let {
+                append('?')
+                append(it)
+            }
+            uri.rawFragment?.let {
+                append('#')
+                append(it)
+            }
+        }.ifEmpty { orig }
+    } catch (_: Throwable) {
+        // Not a parseable URL; a source may already be passing a bare path.
+        orig
+    }
+
     override fun getFilterList(): AnimeFilterList = AnimeFilterList()
 
     // --- orchestration, entirely ours -------------------------------------
