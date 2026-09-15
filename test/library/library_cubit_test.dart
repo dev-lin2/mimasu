@@ -62,6 +62,33 @@ void main() {
     });
   });
 
+  group('Anime serialization', () {
+    test('keeps the fields the library card shows', () {
+      const saved = Anime(
+        url: '/show/',
+        title: 'A Show',
+        source: _source,
+        thumbnailUrl: 'https://example.test/a.jpg',
+        status: AnimeStatus.completed,
+      );
+
+      final restored = Anime.fromJson(saved.toJson())!;
+
+      expect(restored.url, saved.url);
+      expect(restored.title, saved.title);
+      expect(restored.thumbnailUrl, saved.thumbnailUrl);
+      expect(restored.source, saved.source);
+      // The regression this guards: status was left out, so a saved title
+      // lost its "Completed" line the first time the app restarted.
+      expect(restored.status, AnimeStatus.completed);
+    });
+
+    test('an unknown status survives as unknown', () {
+      const saved = Anime(url: '/a/', title: 'A', source: _source);
+      expect(Anime.fromJson(saved.toJson())!.status, AnimeStatus.unknown);
+    });
+  });
+
   group('LibraryCubit', () {
     late LibraryCubit cubit;
     late InMemoryLibraryStore library;

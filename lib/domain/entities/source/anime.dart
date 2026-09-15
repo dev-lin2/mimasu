@@ -115,11 +115,16 @@ class Anime {
   /// Only the listing-level fields are persisted. Details are re-fetched from
   /// the source when the title is opened, so storing a stale synopsis would
   /// buy nothing and could contradict what the source now says.
+  ///
+  /// `status` is here because the library card shows it. Leaving it out made
+  /// a saved title lose its "Completed" line the first time the app
+  /// restarted, which looks like the library forgot something.
   Map<String, dynamic> toJson() => {
     'url': url,
     'title': title,
     'source': source.toJson(),
     'thumbnailUrl': thumbnailUrl,
+    'status': status.name,
   };
 
   static Anime? fromJson(Map<dynamic, dynamic> json) {
@@ -135,6 +140,10 @@ class Anime {
       title: title,
       source: source,
       thumbnailUrl: json['thumbnailUrl'] as String?,
+      status: AnimeStatus.values.firstWhere(
+        (s) => s.name == json['status'],
+        orElse: () => AnimeStatus.unknown,
+      ),
     );
   }
 }
