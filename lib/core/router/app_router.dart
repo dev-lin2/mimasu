@@ -7,6 +7,7 @@ import '../../application/details/details_cubit.dart';
 import '../../data/storage/app_prefs.dart';
 import '../../domain/entities/source/anime.dart';
 import '../../domain/repositories/content_source_repository.dart';
+import '../../domain/repositories/download_repository.dart';
 import '../../application/player/player_cubit.dart';
 import '../../presentation/screens/details/details_screen.dart';
 import '../../presentation/screens/player/player_screen.dart';
@@ -120,6 +121,7 @@ GoRouter buildRouter(AppPrefs prefs) {
           return BlocProvider(
             create: (_) => PlayerCubit(
               locator<ContentSourceRepository>(),
+              locator<DownloadRepository>(),
               prefs,
               anime,
               episode,

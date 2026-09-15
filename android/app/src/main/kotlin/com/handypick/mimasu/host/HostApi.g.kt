@@ -60,6 +60,40 @@ enum class BrowseMode(val raw: Int) {
 }
 
 /**
+ * What a download is doing. The host owns this, not Dart: a download outlives
+ * the Flutter engine, so its state cannot live in a cubit.
+ */
+enum class DownloadState(val raw: Int) {
+  QUEUED(0),
+  RUNNING(1),
+  COMPLETED(2),
+  FAILED(3),
+  CANCELLED(4);
+
+  companion object {
+    fun ofRaw(raw: Int): DownloadState? {
+      return values().firstOrNull { it.raw == raw }
+    }
+  }
+}
+
+/**
+ * Why a download cannot be started right now. Distinguished from a failure
+ * because nothing has gone wrong — the user asked at the wrong moment.
+ */
+enum class DownloadRefusal(val raw: Int) {
+  NONE(0),
+  METERED(1),
+  UNSUPPORTED_FORMAT(2);
+
+  companion object {
+    fun ofRaw(raw: Int): DownloadRefusal? {
+      return values().firstOrNull { it.raw == raw }
+    }
+  }
+}
+
+/**
  * Basic environment facts, used to prove the channel round-trips before any
  * extension work is attempted.
  *
@@ -609,6 +643,104 @@ data class VideosResult (
     )
   }
 }
+
+/** Generated class from Pigeon that represents data sent in messages. */
+data class DownloadRequest (
+  /**
+   * Chosen by Dart so the record and the transfer share an identity even
+   * before the host has seen it.
+   */
+  val id: String,
+  val url: String,
+  /** The source's headers. A download 403s without them just as playback does. */
+  val headers: Map<String?, String?>,
+  /** Without extension; the host appends one once it knows the format. */
+  val fileName: String,
+  /** Shown in the system notification. */
+  val title: String,
+  val subtitle: String
+)
+ {
+  companion object {
+    fun fromList(pigeonVar_list: List<Any?>): DownloadRequest {
+      val id = pigeonVar_list[0] as String
+      val url = pigeonVar_list[1] as String
+      val headers = pigeonVar_list[2] as Map<String?, String?>
+      val fileName = pigeonVar_list[3] as String
+      val title = pigeonVar_list[4] as String
+      val subtitle = pigeonVar_list[5] as String
+      return DownloadRequest(id, url, headers, fileName, title, subtitle)
+    }
+  }
+  fun toList(): List<Any?> {
+    return listOf(
+      id,
+      url,
+      headers,
+      fileName,
+      title,
+      subtitle,
+    )
+  }
+}
+
+/** Generated class from Pigeon that represents data sent in messages. */
+data class DownloadStatus (
+  val id: String,
+  val state: DownloadState,
+  val bytesDownloaded: Long,
+  /**
+   * -1 when the server did not say, which is the common case for a playlist
+   * assembled from segments.
+   */
+  val totalBytes: Long,
+  val filePath: String? = null,
+  val error: String? = null
+)
+ {
+  companion object {
+    fun fromList(pigeonVar_list: List<Any?>): DownloadStatus {
+      val id = pigeonVar_list[0] as String
+      val state = pigeonVar_list[1] as DownloadState
+      val bytesDownloaded = pigeonVar_list[2] as Long
+      val totalBytes = pigeonVar_list[3] as Long
+      val filePath = pigeonVar_list[4] as String?
+      val error = pigeonVar_list[5] as String?
+      return DownloadStatus(id, state, bytesDownloaded, totalBytes, filePath, error)
+    }
+  }
+  fun toList(): List<Any?> {
+    return listOf(
+      id,
+      state,
+      bytesDownloaded,
+      totalBytes,
+      filePath,
+      error,
+    )
+  }
+}
+
+/** Generated class from Pigeon that represents data sent in messages. */
+data class DownloadAccepted (
+  val accepted: Boolean,
+  val refusal: DownloadRefusal
+)
+ {
+  companion object {
+    fun fromList(pigeonVar_list: List<Any?>): DownloadAccepted {
+      val accepted = pigeonVar_list[0] as Boolean
+      val refusal = pigeonVar_list[1] as DownloadRefusal
+      return DownloadAccepted(accepted, refusal)
+    }
+  }
+  fun toList(): List<Any?> {
+    return listOf(
+      accepted,
+      refusal,
+    )
+  }
+}
 private open class HostApiPigeonCodec : StandardMessageCodec() {
   override fun readValueOfType(type: Byte, buffer: ByteBuffer): Any? {
     return when (type) {
@@ -618,78 +750,103 @@ private open class HostApiPigeonCodec : StandardMessageCodec() {
         }
       }
       130.toByte() -> {
-        return (readValue(buffer) as? List<Any?>)?.let {
-          HostInfo.fromList(it)
+        return (readValue(buffer) as Long?)?.let {
+          DownloadState.ofRaw(it.toInt())
         }
       }
       131.toByte() -> {
-        return (readValue(buffer) as? List<Any?>)?.let {
-          ExtensionCandidate.fromList(it)
+        return (readValue(buffer) as Long?)?.let {
+          DownloadRefusal.ofRaw(it.toInt())
         }
       }
       132.toByte() -> {
         return (readValue(buffer) as? List<Any?>)?.let {
-          FetchedAnime.fromList(it)
+          HostInfo.fromList(it)
         }
       }
       133.toByte() -> {
         return (readValue(buffer) as? List<Any?>)?.let {
-          FetchResult.fromList(it)
+          ExtensionCandidate.fromList(it)
         }
       }
       134.toByte() -> {
         return (readValue(buffer) as? List<Any?>)?.let {
-          ApkInfo.fromList(it)
+          FetchedAnime.fromList(it)
         }
       }
       135.toByte() -> {
         return (readValue(buffer) as? List<Any?>)?.let {
-          LoadedSource.fromList(it)
+          FetchResult.fromList(it)
         }
       }
       136.toByte() -> {
         return (readValue(buffer) as? List<Any?>)?.let {
-          ClassProbeResult.fromList(it)
+          ApkInfo.fromList(it)
         }
       }
       137.toByte() -> {
         return (readValue(buffer) as? List<Any?>)?.let {
-          AnimeItem.fromList(it)
+          LoadedSource.fromList(it)
         }
       }
       138.toByte() -> {
         return (readValue(buffer) as? List<Any?>)?.let {
-          EpisodeItem.fromList(it)
+          ClassProbeResult.fromList(it)
         }
       }
       139.toByte() -> {
         return (readValue(buffer) as? List<Any?>)?.let {
-          TrackItem.fromList(it)
+          AnimeItem.fromList(it)
         }
       }
       140.toByte() -> {
         return (readValue(buffer) as? List<Any?>)?.let {
-          VideoItem.fromList(it)
+          EpisodeItem.fromList(it)
         }
       }
       141.toByte() -> {
         return (readValue(buffer) as? List<Any?>)?.let {
-          BrowseResult.fromList(it)
+          TrackItem.fromList(it)
         }
       }
       142.toByte() -> {
         return (readValue(buffer) as? List<Any?>)?.let {
-          DetailsResult.fromList(it)
+          VideoItem.fromList(it)
         }
       }
       143.toByte() -> {
         return (readValue(buffer) as? List<Any?>)?.let {
-          EpisodesResult.fromList(it)
+          BrowseResult.fromList(it)
         }
       }
       144.toByte() -> {
         return (readValue(buffer) as? List<Any?>)?.let {
+          DetailsResult.fromList(it)
+        }
+      }
+      145.toByte() -> {
+        return (readValue(buffer) as? List<Any?>)?.let {
+          EpisodesResult.fromList(it)
+        }
+      }
+      146.toByte() -> {
+        return (readValue(buffer) as? List<Any?>)?.let {
           VideosResult.fromList(it)
+        }
+      }
+      147.toByte() -> {
+        return (readValue(buffer) as? List<Any?>)?.let {
+          DownloadRequest.fromList(it)
+        }
+      }
+      148.toByte() -> {
+        return (readValue(buffer) as? List<Any?>)?.let {
+          DownloadStatus.fromList(it)
+        }
+      }
+      149.toByte() -> {
+        return (readValue(buffer) as? List<Any?>)?.let {
+          DownloadAccepted.fromList(it)
         }
       }
       else -> super.readValueOfType(type, buffer)
@@ -701,64 +858,84 @@ private open class HostApiPigeonCodec : StandardMessageCodec() {
         stream.write(129)
         writeValue(stream, value.raw)
       }
-      is HostInfo -> {
+      is DownloadState -> {
         stream.write(130)
-        writeValue(stream, value.toList())
+        writeValue(stream, value.raw)
       }
-      is ExtensionCandidate -> {
+      is DownloadRefusal -> {
         stream.write(131)
-        writeValue(stream, value.toList())
+        writeValue(stream, value.raw)
       }
-      is FetchedAnime -> {
+      is HostInfo -> {
         stream.write(132)
         writeValue(stream, value.toList())
       }
-      is FetchResult -> {
+      is ExtensionCandidate -> {
         stream.write(133)
         writeValue(stream, value.toList())
       }
-      is ApkInfo -> {
+      is FetchedAnime -> {
         stream.write(134)
         writeValue(stream, value.toList())
       }
-      is LoadedSource -> {
+      is FetchResult -> {
         stream.write(135)
         writeValue(stream, value.toList())
       }
-      is ClassProbeResult -> {
+      is ApkInfo -> {
         stream.write(136)
         writeValue(stream, value.toList())
       }
-      is AnimeItem -> {
+      is LoadedSource -> {
         stream.write(137)
         writeValue(stream, value.toList())
       }
-      is EpisodeItem -> {
+      is ClassProbeResult -> {
         stream.write(138)
         writeValue(stream, value.toList())
       }
-      is TrackItem -> {
+      is AnimeItem -> {
         stream.write(139)
         writeValue(stream, value.toList())
       }
-      is VideoItem -> {
+      is EpisodeItem -> {
         stream.write(140)
         writeValue(stream, value.toList())
       }
-      is BrowseResult -> {
+      is TrackItem -> {
         stream.write(141)
         writeValue(stream, value.toList())
       }
-      is DetailsResult -> {
+      is VideoItem -> {
         stream.write(142)
         writeValue(stream, value.toList())
       }
-      is EpisodesResult -> {
+      is BrowseResult -> {
         stream.write(143)
         writeValue(stream, value.toList())
       }
-      is VideosResult -> {
+      is DetailsResult -> {
         stream.write(144)
+        writeValue(stream, value.toList())
+      }
+      is EpisodesResult -> {
+        stream.write(145)
+        writeValue(stream, value.toList())
+      }
+      is VideosResult -> {
+        stream.write(146)
+        writeValue(stream, value.toList())
+      }
+      is DownloadRequest -> {
+        stream.write(147)
+        writeValue(stream, value.toList())
+      }
+      is DownloadStatus -> {
+        stream.write(148)
+        writeValue(stream, value.toList())
+      }
+      is DownloadAccepted -> {
+        stream.write(149)
         writeValue(stream, value.toList())
       }
       else -> super.writeValue(stream, value)
@@ -1175,6 +1352,128 @@ interface SourceApi {
               wrapError(exception)
             }
             reply.reply(wrapped)
+          }
+        } else {
+          channel.setMessageHandler(null)
+        }
+      }
+    }
+  }
+}
+/** Generated interface from Pigeon that represents a handler of messages from Flutter. */
+interface DownloadHostApi {
+  /** Queues a transfer and starts the foreground service if it is not running. */
+  fun enqueueDownload(request: DownloadRequest, wifiOnly: Boolean, callback: (Result<DownloadAccepted>) -> Unit)
+  /**
+   * Stops a transfer but keeps whatever was written, so the record can show
+   * that it was cancelled rather than vanishing.
+   */
+  fun cancelDownload(id: String, callback: (Result<Unit>) -> Unit)
+  /** Cancels if running, then deletes the file and forgets the transfer. */
+  fun removeDownload(id: String, callback: (Result<Unit>) -> Unit)
+  fun listDownloads(callback: (Result<List<DownloadStatus>>) -> Unit)
+  /** Whether the active network is one the user pays for by the byte. */
+  fun isMeteredConnection(callback: (Result<Boolean>) -> Unit)
+
+  companion object {
+    /** The codec used by DownloadHostApi. */
+    val codec: MessageCodec<Any?> by lazy {
+      HostApiPigeonCodec()
+    }
+    /** Sets up an instance of `DownloadHostApi` to handle messages through the `binaryMessenger`. */
+    @JvmOverloads
+    fun setUp(binaryMessenger: BinaryMessenger, api: DownloadHostApi?, messageChannelSuffix: String = "") {
+      val separatedMessageChannelSuffix = if (messageChannelSuffix.isNotEmpty()) ".$messageChannelSuffix" else ""
+      run {
+        val channel = BasicMessageChannel<Any?>(binaryMessenger, "dev.flutter.pigeon.mimasu.DownloadHostApi.enqueueDownload$separatedMessageChannelSuffix", codec)
+        if (api != null) {
+          channel.setMessageHandler { message, reply ->
+            val args = message as List<Any?>
+            val requestArg = args[0] as DownloadRequest
+            val wifiOnlyArg = args[1] as Boolean
+            api.enqueueDownload(requestArg, wifiOnlyArg) { result: Result<DownloadAccepted> ->
+              val error = result.exceptionOrNull()
+              if (error != null) {
+                reply.reply(wrapError(error))
+              } else {
+                val data = result.getOrNull()
+                reply.reply(wrapResult(data))
+              }
+            }
+          }
+        } else {
+          channel.setMessageHandler(null)
+        }
+      }
+      run {
+        val channel = BasicMessageChannel<Any?>(binaryMessenger, "dev.flutter.pigeon.mimasu.DownloadHostApi.cancelDownload$separatedMessageChannelSuffix", codec)
+        if (api != null) {
+          channel.setMessageHandler { message, reply ->
+            val args = message as List<Any?>
+            val idArg = args[0] as String
+            api.cancelDownload(idArg) { result: Result<Unit> ->
+              val error = result.exceptionOrNull()
+              if (error != null) {
+                reply.reply(wrapError(error))
+              } else {
+                reply.reply(wrapResult(null))
+              }
+            }
+          }
+        } else {
+          channel.setMessageHandler(null)
+        }
+      }
+      run {
+        val channel = BasicMessageChannel<Any?>(binaryMessenger, "dev.flutter.pigeon.mimasu.DownloadHostApi.removeDownload$separatedMessageChannelSuffix", codec)
+        if (api != null) {
+          channel.setMessageHandler { message, reply ->
+            val args = message as List<Any?>
+            val idArg = args[0] as String
+            api.removeDownload(idArg) { result: Result<Unit> ->
+              val error = result.exceptionOrNull()
+              if (error != null) {
+                reply.reply(wrapError(error))
+              } else {
+                reply.reply(wrapResult(null))
+              }
+            }
+          }
+        } else {
+          channel.setMessageHandler(null)
+        }
+      }
+      run {
+        val channel = BasicMessageChannel<Any?>(binaryMessenger, "dev.flutter.pigeon.mimasu.DownloadHostApi.listDownloads$separatedMessageChannelSuffix", codec)
+        if (api != null) {
+          channel.setMessageHandler { _, reply ->
+            api.listDownloads{ result: Result<List<DownloadStatus>> ->
+              val error = result.exceptionOrNull()
+              if (error != null) {
+                reply.reply(wrapError(error))
+              } else {
+                val data = result.getOrNull()
+                reply.reply(wrapResult(data))
+              }
+            }
+          }
+        } else {
+          channel.setMessageHandler(null)
+        }
+      }
+      run {
+        val channel = BasicMessageChannel<Any?>(binaryMessenger, "dev.flutter.pigeon.mimasu.DownloadHostApi.isMeteredConnection$separatedMessageChannelSuffix", codec)
+        if (api != null) {
+          channel.setMessageHandler { _, reply ->
+            api.isMeteredConnection{ result: Result<Boolean> ->
+              val error = result.exceptionOrNull()
+              if (error != null) {
+                reply.reply(wrapError(error))
+              } else {
+                val data = result.getOrNull()
+                reply.reply(wrapResult(data))
+              }
+            }
           }
         } else {
           channel.setMessageHandler(null)

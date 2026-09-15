@@ -13,6 +13,23 @@
          and publishes no APK (INSTRUCTIONS.md 12). -->
     <uses-permission android:name="android.permission.QUERY_ALL_PACKAGES"/>
 
+    <!-- Downloads keep running when the user leaves the app. Android kills
+         ordinary background work within seconds, and an episode takes
+         minutes, so a foreground service is the only supported way to do
+         this (INSTRUCTIONS.md 9). -->
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE"/>
+    <uses-permission
+        android:name="android.permission.FOREGROUND_SERVICE_DATA_SYNC"/>
+
+    <!-- The download notification. Denying it does not stop downloads; it
+         only hides their progress, which is a worse experience rather than a
+         broken one. -->
+    <uses-permission android:name="android.permission.POST_NOTIFICATIONS"/>
+
+    <!-- Reading whether the active network is metered, for the
+         "only download on Wi-Fi" setting. -->
+    <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE"/>
+
     <application
         android:label="Mimasu"
         android:name="${applicationName}"
@@ -51,6 +68,11 @@
                 android:name="android.support.FILE_PROVIDER_PATHS"
                 android:resource="@xml/file_paths" />
         </provider>
+
+        <service
+            android:name=".downloads.DownloadService"
+            android:exported="false"
+            android:foregroundServiceType="dataSync"/>
 
         <!-- Don't delete the meta-data below.
              This is used by the Flutter tool to generate GeneratedPluginRegistrant.java -->

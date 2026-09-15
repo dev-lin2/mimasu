@@ -3,7 +3,9 @@ import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:go_router/go_router.dart';
 
 import '../../../application/details/details_cubit.dart';
+import '../../../application/downloads/downloads_cubit.dart';
 import '../../../application/library/library_cubit.dart';
+import '../../../domain/entities/downloads/download_record.dart';
 import '../../../core/theme/app_theme.dart';
 import '../../../domain/entities/library/watch_progress.dart';
 import '../../../domain/entities/source/anime.dart';
@@ -30,100 +32,114 @@ class _DetailsScreenState extends State<DetailsScreen> {
 
   @override
   Widget build(BuildContext context) {
-    return BlocBuilder<DetailsCubit, DetailsState>(
-      builder: (context, state) {
-        final anime = state.anime;
-        return Scaffold(
-          body: CustomScrollView(
-            slivers: [
-              _Banner(anime: anime),
-              SliverToBoxAdapter(
-                child: Padding(
-                  padding: const EdgeInsets.fromLTRB(
-                    AppSpace.gutter,
-                    18,
-                    AppSpace.gutter,
-                    32,
-                  ),
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      _SourceRow(source: anime.source),
-                      if (state.error != null) ...[
-                        const SizedBox(height: 16),
-                        _Problem(message: state.error!),
-                      ],
-                      if (anime.genres.isNotEmpty) ...[
-                        const SizedBox(height: 18),
-                        Wrap(
-                          spacing: 8,
-                          runSpacing: 8,
-                          children: [
-                            for (final g in anime.genres.take(8)) _Chip(g),
-                          ],
-                        ),
-                      ],
-                      if (anime.description != null) ...[
-                        const SizedBox(height: 18),
-                        Text(
-                          anime.description!,
-                          style: const TextStyle(
-                            color: AppColors.textSecondary,
-                            fontSize: 14,
-                            height: 1.55,
+    return BlocListener<DownloadsCubit, DownloadsState>(
+      listenWhen: (a, b) => b.notice != null && a.notice != b.notice,
+      listener: (context, downloads) {
+        ScaffoldMessenger.of(context)
+          ..hideCurrentSnackBar()
+          ..showSnackBar(
+            SnackBar(
+              content: Text(downloads.notice!),
+              behavior: SnackBarBehavior.floating,
+            ),
+          );
+        context.read<DownloadsCubit>().dismissNotice();
+      },
+      child: BlocBuilder<DetailsCubit, DetailsState>(
+        builder: (context, state) {
+          final anime = state.anime;
+          return Scaffold(
+            body: CustomScrollView(
+              slivers: [
+                _Banner(anime: anime),
+                SliverToBoxAdapter(
+                  child: Padding(
+                    padding: const EdgeInsets.fromLTRB(
+                      AppSpace.gutter,
+                      18,
+                      AppSpace.gutter,
+                      32,
+                    ),
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        _SourceRow(source: anime.source),
+                        if (state.error != null) ...[
+                          const SizedBox(height: 16),
+                          _Problem(message: state.error!),
+                        ],
+                        if (anime.genres.isNotEmpty) ...[
+                          const SizedBox(height: 18),
+                          Wrap(
+                            spacing: 8,
+                            runSpacing: 8,
+                            children: [
+                              for (final g in anime.genres.take(8)) _Chip(g),
+                            ],
                           ),
+                        ],
+                        if (anime.description != null) ...[
+                          const SizedBox(height: 18),
+                          Text(
+                            anime.description!,
+                            style: const TextStyle(
+                              color: AppColors.textSecondary,
+                              fontSize: 14,
+                              height: 1.55,
+                            ),
+                          ),
+                        ],
+                        const SizedBox(height: 24),
+                        SectionHead(
+                          title: 'Episodes',
+                          trailing: state.status == DetailsStatus.loading
+                              ? null
+                              : '${state.episodes.length}',
                         ),
+                        const SizedBox(height: 14),
+                        if (state.status == DetailsStatus.loading)
+                          const Padding(
+                            padding: EdgeInsets.symmetric(vertical: 30),
+                            child: Center(child: CircularProgressIndicator()),
+                          )
+                        else if (state.episodesError != null)
+                          EmptyState(
+                            icon: Icons.error_outline,
+                            title: 'No episode list',
+                            body: state.episodesError!,
+                            tone: EmptyStateTone.problem,
+                            primaryLabel: 'Try again',
+                            primaryIcon: Icons.refresh,
+                            onPrimary: () =>
+                                context.read<DetailsCubit>().load(),
+                          )
+                        else if (state.episodes.isEmpty)
+                          const EmptyState(
+                            icon: Icons.inbox_outlined,
+                            title: 'No episodes',
+                            body:
+                                'The source listed none for this title. It may '
+                                'not be available there.',
+                          )
+                        else
+                          for (final e in state.episodes)
+                            _EpisodeRow(anime: anime, episode: e),
+                        if (state.episodes.isNotEmpty) ...[
+                          const SizedBox(height: 4),
+                          const Text(
+                            'Hold an episode to mark it watched.',
+                            style: AppText.meta,
+                          ),
+                        ],
                       ],
-                      const SizedBox(height: 24),
-                      SectionHead(
-                        title: 'Episodes',
-                        trailing: state.status == DetailsStatus.loading
-                            ? null
-                            : '${state.episodes.length}',
-                      ),
-                      const SizedBox(height: 14),
-                      if (state.status == DetailsStatus.loading)
-                        const Padding(
-                          padding: EdgeInsets.symmetric(vertical: 30),
-                          child: Center(child: CircularProgressIndicator()),
-                        )
-                      else if (state.episodesError != null)
-                        EmptyState(
-                          icon: Icons.error_outline,
-                          title: 'No episode list',
-                          body: state.episodesError!,
-                          tone: EmptyStateTone.problem,
-                          primaryLabel: 'Try again',
-                          primaryIcon: Icons.refresh,
-                          onPrimary: () =>
-                              context.read<DetailsCubit>().load(),
-                        )
-                      else if (state.episodes.isEmpty)
-                        const EmptyState(
-                          icon: Icons.inbox_outlined,
-                          title: 'No episodes',
-                          body:
-                              'The source listed none for this title. It may '
-                              'not be available there.',
-                        )
-                      else
-                        for (final e in state.episodes)
-                          _EpisodeRow(anime: anime, episode: e),
-                      if (state.episodes.isNotEmpty) ...[
-                        const SizedBox(height: 4),
-                        const Text(
-                          'Hold an episode to mark it watched.',
-                          style: AppText.meta,
-                        ),
-                      ],
-                    ],
+                    ),
                   ),
                 ),
-              ),
-            ],
-          ),
-        );
-      },
+              ],
+            ),
+          );
+        },
+      ),
     );
   }
 }
@@ -260,11 +276,7 @@ class _Problem extends StatelessWidget {
     child: Row(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        const Icon(
-          Icons.info_outline,
-          size: 16,
-          color: AppColors.accent,
-        ),
+        const Icon(Icons.info_outline, size: 16, color: AppColors.accent),
         const SizedBox(width: 10),
         Expanded(
           child: Text(
@@ -370,7 +382,8 @@ class _EpisodeRow extends StatelessWidget {
                   ],
                 ),
               ),
-              const SizedBox(width: 8),
+              const SizedBox(width: 4),
+              _DownloadButton(anime: anime, episode: episode),
               Icon(
                 progress != null && progress.started
                     ? Icons.play_circle
@@ -454,5 +467,51 @@ class _SaveButton extends StatelessWidget {
           );
       },
     );
+  }
+}
+
+class _DownloadButton extends StatelessWidget {
+  const _DownloadButton({required this.anime, required this.episode});
+
+  final Anime anime;
+  final Episode episode;
+
+  @override
+  Widget build(BuildContext context) {
+    final state = context.select<DownloadsCubit, DownloadProgressState?>(
+      (c) => c.state.stateFor(anime.id, episode.url),
+    );
+
+    return switch (state) {
+      DownloadProgressState.completed => IconButton(
+        tooltip: 'Downloaded — plays without a connection',
+        icon: const Icon(
+          Icons.download_done,
+          size: 19,
+          color: AppColors.accent,
+        ),
+        onPressed: null,
+      ),
+      DownloadProgressState.queued ||
+      DownloadProgressState.running => const Padding(
+        padding: EdgeInsets.symmetric(horizontal: 14),
+        child: SizedBox(
+          width: 15,
+          height: 15,
+          child: CircularProgressIndicator(strokeWidth: 2),
+        ),
+      ),
+      // Cancelled and failed both offer the same next move: try again.
+      _ => IconButton(
+        tooltip: 'Download',
+        icon: Icon(
+          state == null ? Icons.download_outlined : Icons.refresh,
+          size: 19,
+          color: AppColors.textTertiary,
+        ),
+        onPressed: () =>
+            context.read<DownloadsCubit>().download(anime, episode),
+      ),
+    };
   }
 }

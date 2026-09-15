@@ -216,3 +216,21 @@ class VideoStream {
   /// What the player should actually open.
   String get playbackUrl => (videoUrl?.isNotEmpty ?? false) ? videoUrl! : url;
 }
+
+/// The stream to use for a given quality preference.
+///
+/// Shared by playback and downloads so an episode is saved at the same
+/// quality it would have been watched at. Falls back to the source's own
+/// ordering: its first entry is its own preference, which beats guessing from
+/// labels it wrote for itself.
+VideoStream pickPreferredStream(
+  List<VideoStream> streams,
+  String preferredQuality,
+) {
+  final wanted = preferredQuality.trim().toLowerCase();
+  if (wanted.isEmpty || wanted == 'auto') return streams.first;
+  for (final stream in streams) {
+    if (stream.quality.toLowerCase().contains(wanted)) return stream;
+  }
+  return streams.first;
+}

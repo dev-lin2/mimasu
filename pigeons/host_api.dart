@@ -407,3 +407,92 @@ abstract class SourceApi {
   /// Drops cached source instances, e.g. after an extension is updated.
   void clearSourceCache();
 }
+
+// --- Downloads (INSTRUCTIONS.md §9) ---------------------------------------
+
+/// What a download is doing. The host owns this, not Dart: a download outlives
+/// the Flutter engine, so its state cannot live in a cubit.
+enum DownloadState { queued, running, completed, failed, cancelled }
+
+/// Why a download cannot be started right now. Distinguished from a failure
+/// because nothing has gone wrong — the user asked at the wrong moment.
+enum DownloadRefusal { none, metered, unsupportedFormat }
+
+class DownloadRequest {
+  DownloadRequest({
+    required this.id,
+    required this.url,
+    required this.headers,
+    required this.fileName,
+    required this.title,
+    required this.subtitle,
+  });
+
+  /// Chosen by Dart so the record and the transfer share an identity even
+  /// before the host has seen it.
+  final String id;
+
+  final String url;
+
+  /// The source's headers. A download 403s without them just as playback does.
+  final Map<String?, String?> headers;
+
+  /// Without extension; the host appends one once it knows the format.
+  final String fileName;
+
+  /// Shown in the system notification.
+  final String title;
+  final String subtitle;
+}
+
+class DownloadStatus {
+  DownloadStatus({
+    required this.id,
+    required this.state,
+    required this.bytesDownloaded,
+    required this.totalBytes,
+    required this.filePath,
+    required this.error,
+  });
+
+  final String id;
+  final DownloadState state;
+  final int bytesDownloaded;
+
+  /// -1 when the server did not say, which is the common case for a playlist
+  /// assembled from segments.
+  final int totalBytes;
+
+  final String? filePath;
+  final String? error;
+}
+
+class DownloadAccepted {
+  DownloadAccepted({required this.accepted, required this.refusal});
+
+  final bool accepted;
+  final DownloadRefusal refusal;
+}
+
+@HostApi()
+abstract class DownloadHostApi {
+  /// Queues a transfer and starts the foreground service if it is not running.
+  @async
+  DownloadAccepted enqueueDownload(DownloadRequest request, bool wifiOnly);
+
+  /// Stops a transfer but keeps whatever was written, so the record can show
+  /// that it was cancelled rather than vanishing.
+  @async
+  void cancelDownload(String id);
+
+  /// Cancels if running, then deletes the file and forgets the transfer.
+  @async
+  void removeDownload(String id);
+
+  @async
+  List<DownloadStatus> listDownloads();
+
+  /// Whether the active network is one the user pays for by the byte.
+  @async
+  bool isMeteredConnection();
+}

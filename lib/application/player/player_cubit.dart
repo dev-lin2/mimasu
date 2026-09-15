@@ -3,6 +3,7 @@ import 'package:flutter_bloc/flutter_bloc.dart';
 import '../../data/storage/app_prefs.dart';
 import '../../domain/entities/source/anime.dart';
 import '../../domain/repositories/content_source_repository.dart';
+import '../../domain/repositories/download_repository.dart';
 
 enum PlayerStatus { resolving, ready, failure }
 
@@ -19,6 +20,7 @@ class PlaybackState {
     this.streams = const [],
     this.selected,
     this.error,
+    this.offline = false,
   });
 
   final Anime anime;
@@ -33,13 +35,18 @@ class PlaybackState {
 
   final String? error;
 
-  bool get hasChoices => streams.length > 1;
+  /// Playing a downloaded file rather than a stream. The quality menu is
+  /// meaningless then — there is exactly one copy on disk.
+  final bool offline;
+
+  bool get hasChoices => streams.length > 1 && !offline;
 
   PlaybackState copyWith({
     PlayerStatus? status,
     List<VideoStream>? streams,
     VideoStream? selected,
     String? error,
+    bool? offline,
     bool clearError = false,
   }) => PlaybackState(
     anime: anime,
@@ -48,18 +55,42 @@ class PlaybackState {
     streams: streams ?? this.streams,
     selected: selected ?? this.selected,
     error: clearError ? null : (error ?? this.error),
+    offline: offline ?? this.offline,
   );
 }
 
 class PlayerCubit extends Cubit<PlaybackState> {
-  PlayerCubit(this._content, this._prefs, Anime anime, Episode episode)
-    : super(PlaybackState(anime: anime, episode: episode));
+  PlayerCubit(
+    this._content,
+    this._downloads,
+    this._prefs,
+    Anime anime,
+    Episode episode,
+  ) : super(PlaybackState(anime: anime, episode: episode));
 
   final ContentSourceRepository _content;
+  final DownloadRepository _downloads;
   final AppPrefs _prefs;
 
   Future<void> resolve() async {
     emit(state.copyWith(status: PlayerStatus.resolving, clearError: true));
+
+    // A downloaded episode is the whole point of downloading it: play the
+    // file and never touch the network, so this works with no connection at
+    // all — which is when it matters.
+    final local = await _localStream();
+    if (local != null) {
+      emit(
+        state.copyWith(
+          status: PlayerStatus.ready,
+          streams: [local],
+          selected: local,
+          offline: true,
+        ),
+      );
+      return;
+    }
+
     try {
       final streams = await _content.videos(
         state.anime.source,
@@ -69,7 +100,7 @@ class PlayerCubit extends Cubit<PlaybackState> {
         state.copyWith(
           status: PlayerStatus.ready,
           streams: streams,
-          selected: _pick(streams),
+          selected: pickPreferredStream(streams, _prefs.preferredQuality),
         ),
       );
     } on SourceFailure catch (e) {
@@ -77,19 +108,23 @@ class PlayerCubit extends Cubit<PlaybackState> {
     }
   }
 
-  /// Honours the quality preference when a stream's label plausibly matches
-  /// it, and otherwise falls back to the source's own ordering — the first
-  /// entry is the source's preference, which beats guessing from labels it
-  /// wrote for itself.
-  VideoStream _pick(List<VideoStream> streams) {
-    final wanted = _prefs.preferredQuality;
-    if (wanted.isEmpty || wanted.toLowerCase() == 'auto') return streams.first;
-    for (final stream in streams) {
-      if (stream.quality.toLowerCase().contains(wanted.toLowerCase())) {
-        return stream;
+  /// The downloaded file as a stream, or null if there is not one.
+  Future<VideoStream?> _localStream() async {
+    try {
+      final items = await _downloads.list();
+      for (final item in items) {
+        if (!item.isFinished) continue;
+        if (item.record.anime.id != state.anime.id) continue;
+        if (item.record.episodeUrl != state.episode.url) continue;
+        final path = item.filePath;
+        if (path == null) continue;
+        return VideoStream(url: path, quality: 'Downloaded');
       }
+    } catch (_) {
+      // A download list that cannot be read is not a reason to refuse to
+      // play; fall through and ask the source.
     }
-    return streams.first;
+    return null;
   }
 
   void selectStream(VideoStream stream) =>

@@ -7,6 +7,7 @@ import 'package:media_kit/media_kit.dart';
 import 'package:media_kit_video/media_kit_video.dart';
 import 'package:wakelock_plus/wakelock_plus.dart';
 
+import '../../../application/downloads/downloads_cubit.dart';
 import '../../../application/library/library_cubit.dart';
 import '../../../application/player/player_cubit.dart';
 import '../../../core/di/locator.dart';
@@ -54,6 +55,10 @@ class _PlayerScreenState extends State<PlayerScreen> {
   /// Captured in `initState`: `dispose` must not reach into the tree for
   /// these, and they never change for the life of this screen.
   late final LibraryCubit _library = context.read<LibraryCubit>();
+  late final DownloadsCubit _downloads = context.read<DownloadsCubit>();
+
+  /// "Delete after watching" must fire once, not on every tick past 90%.
+  bool _finishNotified = false;
   late final String _animeId;
   late final String _episodeUrl;
 
@@ -105,6 +110,13 @@ class _PlayerScreenState extends State<PlayerScreen> {
           duration: _duration,
         ),
       );
+
+      if (!_finishNotified &&
+          (_library.state.progressFor(_animeId, _episodeUrl)?.finished ??
+              false)) {
+        _finishNotified = true;
+        unawaited(_downloads.onEpisodeFinished(_animeId, _episodeUrl));
+      }
     });
   }
 

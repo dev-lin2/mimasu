@@ -22,6 +22,24 @@ enum BrowseMode {
   search,
 }
 
+/// What a download is doing. The host owns this, not Dart: a download outlives
+/// the Flutter engine, so its state cannot live in a cubit.
+enum DownloadState {
+  queued,
+  running,
+  completed,
+  failed,
+  cancelled,
+}
+
+/// Why a download cannot be started right now. Distinguished from a failure
+/// because nothing has gone wrong — the user asked at the wrong moment.
+enum DownloadRefusal {
+  none,
+  metered,
+  unsupportedFormat,
+}
+
 /// Basic environment facts, used to prove the channel round-trips before any
 /// extension work is attempted.
 class HostInfo {
@@ -489,7 +507,12 @@ class EpisodeItem {
   }
 }
 
-
+/// One external track alongside a video.
+///
+/// The language matters: a source commonly offers eight subtitle tracks and
+/// the url alone gives the player no way to tell them apart, so an earlier
+/// version of this bridge that carried only urls made the subtitle-language
+/// preference unimplementable.
 class TrackItem {
   TrackItem({
     required this.url,
@@ -705,6 +728,131 @@ class VideosResult {
   }
 }
 
+class DownloadRequest {
+  DownloadRequest({
+    required this.id,
+    required this.url,
+    required this.headers,
+    required this.fileName,
+    required this.title,
+    required this.subtitle,
+  });
+
+  /// Chosen by Dart so the record and the transfer share an identity even
+  /// before the host has seen it.
+  String id;
+
+  String url;
+
+  /// The source's headers. A download 403s without them just as playback does.
+  Map<String?, String?> headers;
+
+  /// Without extension; the host appends one once it knows the format.
+  String fileName;
+
+  /// Shown in the system notification.
+  String title;
+
+  String subtitle;
+
+  Object encode() {
+    return <Object?>[
+      id,
+      url,
+      headers,
+      fileName,
+      title,
+      subtitle,
+    ];
+  }
+
+  static DownloadRequest decode(Object result) {
+    result as List<Object?>;
+    return DownloadRequest(
+      id: result[0]! as String,
+      url: result[1]! as String,
+      headers: (result[2] as Map<Object?, Object?>?)!.cast<String?, String?>(),
+      fileName: result[3]! as String,
+      title: result[4]! as String,
+      subtitle: result[5]! as String,
+    );
+  }
+}
+
+class DownloadStatus {
+  DownloadStatus({
+    required this.id,
+    required this.state,
+    required this.bytesDownloaded,
+    required this.totalBytes,
+    this.filePath,
+    this.error,
+  });
+
+  String id;
+
+  DownloadState state;
+
+  int bytesDownloaded;
+
+  /// -1 when the server did not say, which is the common case for a playlist
+  /// assembled from segments.
+  int totalBytes;
+
+  String? filePath;
+
+  String? error;
+
+  Object encode() {
+    return <Object?>[
+      id,
+      state,
+      bytesDownloaded,
+      totalBytes,
+      filePath,
+      error,
+    ];
+  }
+
+  static DownloadStatus decode(Object result) {
+    result as List<Object?>;
+    return DownloadStatus(
+      id: result[0]! as String,
+      state: result[1]! as DownloadState,
+      bytesDownloaded: result[2]! as int,
+      totalBytes: result[3]! as int,
+      filePath: result[4] as String?,
+      error: result[5] as String?,
+    );
+  }
+}
+
+class DownloadAccepted {
+  DownloadAccepted({
+    required this.accepted,
+    required this.refusal,
+  });
+
+  bool accepted;
+
+  DownloadRefusal refusal;
+
+  Object encode() {
+    return <Object?>[
+      accepted,
+      refusal,
+    ];
+  }
+
+  static DownloadAccepted decode(Object result) {
+    result as List<Object?>;
+    return DownloadAccepted(
+      accepted: result[0]! as bool,
+      refusal: result[1]! as DownloadRefusal,
+    );
+  }
+}
+
 
 class _PigeonCodec extends StandardMessageCodec {
   const _PigeonCodec();
@@ -716,50 +864,65 @@ class _PigeonCodec extends StandardMessageCodec {
     }    else if (value is BrowseMode) {
       buffer.putUint8(129);
       writeValue(buffer, value.index);
-    }    else if (value is HostInfo) {
+    }    else if (value is DownloadState) {
       buffer.putUint8(130);
-      writeValue(buffer, value.encode());
-    }    else if (value is ExtensionCandidate) {
+      writeValue(buffer, value.index);
+    }    else if (value is DownloadRefusal) {
       buffer.putUint8(131);
-      writeValue(buffer, value.encode());
-    }    else if (value is FetchedAnime) {
+      writeValue(buffer, value.index);
+    }    else if (value is HostInfo) {
       buffer.putUint8(132);
       writeValue(buffer, value.encode());
-    }    else if (value is FetchResult) {
+    }    else if (value is ExtensionCandidate) {
       buffer.putUint8(133);
       writeValue(buffer, value.encode());
-    }    else if (value is ApkInfo) {
+    }    else if (value is FetchedAnime) {
       buffer.putUint8(134);
       writeValue(buffer, value.encode());
-    }    else if (value is LoadedSource) {
+    }    else if (value is FetchResult) {
       buffer.putUint8(135);
       writeValue(buffer, value.encode());
-    }    else if (value is ClassProbeResult) {
+    }    else if (value is ApkInfo) {
       buffer.putUint8(136);
       writeValue(buffer, value.encode());
-    }    else if (value is AnimeItem) {
+    }    else if (value is LoadedSource) {
       buffer.putUint8(137);
       writeValue(buffer, value.encode());
-    }    else if (value is EpisodeItem) {
+    }    else if (value is ClassProbeResult) {
       buffer.putUint8(138);
       writeValue(buffer, value.encode());
-    }    else if (value is TrackItem) {
+    }    else if (value is AnimeItem) {
       buffer.putUint8(139);
       writeValue(buffer, value.encode());
-    }    else if (value is VideoItem) {
+    }    else if (value is EpisodeItem) {
       buffer.putUint8(140);
       writeValue(buffer, value.encode());
-    }    else if (value is BrowseResult) {
+    }    else if (value is TrackItem) {
       buffer.putUint8(141);
       writeValue(buffer, value.encode());
-    }    else if (value is DetailsResult) {
+    }    else if (value is VideoItem) {
       buffer.putUint8(142);
       writeValue(buffer, value.encode());
-    }    else if (value is EpisodesResult) {
+    }    else if (value is BrowseResult) {
       buffer.putUint8(143);
       writeValue(buffer, value.encode());
-    }    else if (value is VideosResult) {
+    }    else if (value is DetailsResult) {
       buffer.putUint8(144);
+      writeValue(buffer, value.encode());
+    }    else if (value is EpisodesResult) {
+      buffer.putUint8(145);
+      writeValue(buffer, value.encode());
+    }    else if (value is VideosResult) {
+      buffer.putUint8(146);
+      writeValue(buffer, value.encode());
+    }    else if (value is DownloadRequest) {
+      buffer.putUint8(147);
+      writeValue(buffer, value.encode());
+    }    else if (value is DownloadStatus) {
+      buffer.putUint8(148);
+      writeValue(buffer, value.encode());
+    }    else if (value is DownloadAccepted) {
+      buffer.putUint8(149);
       writeValue(buffer, value.encode());
     } else {
       super.writeValue(buffer, value);
@@ -773,35 +936,47 @@ class _PigeonCodec extends StandardMessageCodec {
         final int? value = readValue(buffer) as int?;
         return value == null ? null : BrowseMode.values[value];
       case 130: 
-        return HostInfo.decode(readValue(buffer)!);
+        final int? value = readValue(buffer) as int?;
+        return value == null ? null : DownloadState.values[value];
       case 131: 
-        return ExtensionCandidate.decode(readValue(buffer)!);
+        final int? value = readValue(buffer) as int?;
+        return value == null ? null : DownloadRefusal.values[value];
       case 132: 
-        return FetchedAnime.decode(readValue(buffer)!);
+        return HostInfo.decode(readValue(buffer)!);
       case 133: 
-        return FetchResult.decode(readValue(buffer)!);
+        return ExtensionCandidate.decode(readValue(buffer)!);
       case 134: 
-        return ApkInfo.decode(readValue(buffer)!);
+        return FetchedAnime.decode(readValue(buffer)!);
       case 135: 
-        return LoadedSource.decode(readValue(buffer)!);
+        return FetchResult.decode(readValue(buffer)!);
       case 136: 
-        return ClassProbeResult.decode(readValue(buffer)!);
+        return ApkInfo.decode(readValue(buffer)!);
       case 137: 
-        return AnimeItem.decode(readValue(buffer)!);
+        return LoadedSource.decode(readValue(buffer)!);
       case 138: 
-        return EpisodeItem.decode(readValue(buffer)!);
+        return ClassProbeResult.decode(readValue(buffer)!);
       case 139: 
-        return TrackItem.decode(readValue(buffer)!);
+        return AnimeItem.decode(readValue(buffer)!);
       case 140: 
-        return VideoItem.decode(readValue(buffer)!);
+        return EpisodeItem.decode(readValue(buffer)!);
       case 141: 
-        return BrowseResult.decode(readValue(buffer)!);
+        return TrackItem.decode(readValue(buffer)!);
       case 142: 
-        return DetailsResult.decode(readValue(buffer)!);
+        return VideoItem.decode(readValue(buffer)!);
       case 143: 
-        return EpisodesResult.decode(readValue(buffer)!);
+        return BrowseResult.decode(readValue(buffer)!);
       case 144: 
+        return DetailsResult.decode(readValue(buffer)!);
+      case 145: 
+        return EpisodesResult.decode(readValue(buffer)!);
+      case 146: 
         return VideosResult.decode(readValue(buffer)!);
+      case 147: 
+        return DownloadRequest.decode(readValue(buffer)!);
+      case 148: 
+        return DownloadStatus.decode(readValue(buffer)!);
+      case 149: 
+        return DownloadAccepted.decode(readValue(buffer)!);
       default:
         return super.readValueOfType(type, buffer);
     }
@@ -1320,6 +1495,150 @@ class SourceApi {
       );
     } else {
       return;
+    }
+  }
+}
+
+class DownloadHostApi {
+  /// Constructor for [DownloadHostApi].  The [binaryMessenger] named argument is
+  /// available for dependency injection.  If it is left null, the default
+  /// BinaryMessenger will be used which routes to the host platform.
+  DownloadHostApi({BinaryMessenger? binaryMessenger, String messageChannelSuffix = ''})
+      : pigeonVar_binaryMessenger = binaryMessenger,
+        pigeonVar_messageChannelSuffix = messageChannelSuffix.isNotEmpty ? '.$messageChannelSuffix' : '';
+  final BinaryMessenger? pigeonVar_binaryMessenger;
+
+  static const MessageCodec<Object?> pigeonChannelCodec = _PigeonCodec();
+
+  final String pigeonVar_messageChannelSuffix;
+
+  /// Queues a transfer and starts the foreground service if it is not running.
+  Future<DownloadAccepted> enqueueDownload(DownloadRequest request, bool wifiOnly) async {
+    final String pigeonVar_channelName = 'dev.flutter.pigeon.mimasu.DownloadHostApi.enqueueDownload$pigeonVar_messageChannelSuffix';
+    final BasicMessageChannel<Object?> pigeonVar_channel = BasicMessageChannel<Object?>(
+      pigeonVar_channelName,
+      pigeonChannelCodec,
+      binaryMessenger: pigeonVar_binaryMessenger,
+    );
+    final List<Object?>? pigeonVar_replyList =
+        await pigeonVar_channel.send(<Object?>[request, wifiOnly]) as List<Object?>?;
+    if (pigeonVar_replyList == null) {
+      throw _createConnectionError(pigeonVar_channelName);
+    } else if (pigeonVar_replyList.length > 1) {
+      throw PlatformException(
+        code: pigeonVar_replyList[0]! as String,
+        message: pigeonVar_replyList[1] as String?,
+        details: pigeonVar_replyList[2],
+      );
+    } else if (pigeonVar_replyList[0] == null) {
+      throw PlatformException(
+        code: 'null-error',
+        message: 'Host platform returned null value for non-null return value.',
+      );
+    } else {
+      return (pigeonVar_replyList[0] as DownloadAccepted?)!;
+    }
+  }
+
+  /// Stops a transfer but keeps whatever was written, so the record can show
+  /// that it was cancelled rather than vanishing.
+  Future<void> cancelDownload(String id) async {
+    final String pigeonVar_channelName = 'dev.flutter.pigeon.mimasu.DownloadHostApi.cancelDownload$pigeonVar_messageChannelSuffix';
+    final BasicMessageChannel<Object?> pigeonVar_channel = BasicMessageChannel<Object?>(
+      pigeonVar_channelName,
+      pigeonChannelCodec,
+      binaryMessenger: pigeonVar_binaryMessenger,
+    );
+    final List<Object?>? pigeonVar_replyList =
+        await pigeonVar_channel.send(<Object?>[id]) as List<Object?>?;
+    if (pigeonVar_replyList == null) {
+      throw _createConnectionError(pigeonVar_channelName);
+    } else if (pigeonVar_replyList.length > 1) {
+      throw PlatformException(
+        code: pigeonVar_replyList[0]! as String,
+        message: pigeonVar_replyList[1] as String?,
+        details: pigeonVar_replyList[2],
+      );
+    } else {
+      return;
+    }
+  }
+
+  /// Cancels if running, then deletes the file and forgets the transfer.
+  Future<void> removeDownload(String id) async {
+    final String pigeonVar_channelName = 'dev.flutter.pigeon.mimasu.DownloadHostApi.removeDownload$pigeonVar_messageChannelSuffix';
+    final BasicMessageChannel<Object?> pigeonVar_channel = BasicMessageChannel<Object?>(
+      pigeonVar_channelName,
+      pigeonChannelCodec,
+      binaryMessenger: pigeonVar_binaryMessenger,
+    );
+    final List<Object?>? pigeonVar_replyList =
+        await pigeonVar_channel.send(<Object?>[id]) as List<Object?>?;
+    if (pigeonVar_replyList == null) {
+      throw _createConnectionError(pigeonVar_channelName);
+    } else if (pigeonVar_replyList.length > 1) {
+      throw PlatformException(
+        code: pigeonVar_replyList[0]! as String,
+        message: pigeonVar_replyList[1] as String?,
+        details: pigeonVar_replyList[2],
+      );
+    } else {
+      return;
+    }
+  }
+
+  Future<List<DownloadStatus>> listDownloads() async {
+    final String pigeonVar_channelName = 'dev.flutter.pigeon.mimasu.DownloadHostApi.listDownloads$pigeonVar_messageChannelSuffix';
+    final BasicMessageChannel<Object?> pigeonVar_channel = BasicMessageChannel<Object?>(
+      pigeonVar_channelName,
+      pigeonChannelCodec,
+      binaryMessenger: pigeonVar_binaryMessenger,
+    );
+    final List<Object?>? pigeonVar_replyList =
+        await pigeonVar_channel.send(null) as List<Object?>?;
+    if (pigeonVar_replyList == null) {
+      throw _createConnectionError(pigeonVar_channelName);
+    } else if (pigeonVar_replyList.length > 1) {
+      throw PlatformException(
+        code: pigeonVar_replyList[0]! as String,
+        message: pigeonVar_replyList[1] as String?,
+        details: pigeonVar_replyList[2],
+      );
+    } else if (pigeonVar_replyList[0] == null) {
+      throw PlatformException(
+        code: 'null-error',
+        message: 'Host platform returned null value for non-null return value.',
+      );
+    } else {
+      return (pigeonVar_replyList[0] as List<Object?>?)!.cast<DownloadStatus>();
+    }
+  }
+
+  /// Whether the active network is one the user pays for by the byte.
+  Future<bool> isMeteredConnection() async {
+    final String pigeonVar_channelName = 'dev.flutter.pigeon.mimasu.DownloadHostApi.isMeteredConnection$pigeonVar_messageChannelSuffix';
+    final BasicMessageChannel<Object?> pigeonVar_channel = BasicMessageChannel<Object?>(
+      pigeonVar_channelName,
+      pigeonChannelCodec,
+      binaryMessenger: pigeonVar_binaryMessenger,
+    );
+    final List<Object?>? pigeonVar_replyList =
+        await pigeonVar_channel.send(null) as List<Object?>?;
+    if (pigeonVar_replyList == null) {
+      throw _createConnectionError(pigeonVar_channelName);
+    } else if (pigeonVar_replyList.length > 1) {
+      throw PlatformException(
+        code: pigeonVar_replyList[0]! as String,
+        message: pigeonVar_replyList[1] as String?,
+        details: pigeonVar_replyList[2],
+      );
+    } else if (pigeonVar_replyList[0] == null) {
+      throw PlatformException(
+        code: 'null-error',
+        message: 'Host platform returned null value for non-null return value.',
+      );
+    } else {
+      return (pigeonVar_replyList[0] as bool?)!;
     }
   }
 }
