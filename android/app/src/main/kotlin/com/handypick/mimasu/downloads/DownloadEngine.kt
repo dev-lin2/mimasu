@@ -92,9 +92,21 @@ object DownloadEngine {
         if (wifiOnly && isMetered(context)) return Refusal.METERED
         if (!isSupported(transfer.url)) return Refusal.UNSUPPORTED_FORMAT
 
-        // Re-queueing something already here is a no-op rather than a second
-        // copy of the same episode.
-        if (transfers.containsKey(transfer.id)) return Refusal.NONE
+        // Asking again for something already queued or running is a no-op
+        // rather than a second copy of the same episode. One that failed or
+        // was cancelled is a retry, and has to actually start again — an
+        // earlier version returned "accepted" here and then did nothing,
+        // which made the retry button appear broken.
+        val existing = transfers[transfer.id]
+        if (existing != null) {
+            if (existing.state == State.QUEUED || existing.state == State.RUNNING) {
+                return Refusal.NONE
+            }
+            // The partial file is deliberately left alone: a direct download
+            // resumes from it. An HLS transfer truncates its own output when
+            // it reopens, because half a segment is not resumable.
+            transfers.remove(transfer.id)
+        }
 
         transfers[transfer.id] = transfer
         queue.addLast(transfer.id)
@@ -180,14 +192,48 @@ object DownloadEngine {
         onChanged?.invoke()
     }
 
+    /**
+     * How many times a transfer is retried before it is reported as failed.
+     *
+     * Not padding: a real download here died at 99.3% with a TLS read error
+     * after four minutes. Losing all of that to one dropped connection is the
+     * normal case on a long transfer, not an edge case.
+     */
+    private const val maxAttempts = 4
+
     private fun run(transfer: Transfer) {
         transfer.state = State.RUNNING
         transfer.error = null
         onChanged?.invoke()
 
+        var attempt = 0
+        while (true) {
+            attempt++
+            val failure = attemptOnce(transfer)
+            if (failure == null || transfer.cancelled.get()) break
+            if (attempt >= maxAttempts) {
+                transfer.state = State.FAILED
+                transfer.error = failure
+                break
+            }
+            // A direct download resumes from what is already on disk, so a
+            // retry costs only what the dropped connection lost.
+            Thread.sleep(1000L * attempt)
+        }
+        persist()
+        onChanged?.invoke()
+    }
+
+    /** Returns null on success, or a description of what went wrong. */
+    private fun attemptOnce(transfer: Transfer): String? {
         try {
             val hls = isHls(transfer)
             val target = outputFile(transfer, hls)
+            // Recorded before the transfer starts, not after it succeeds:
+            // otherwise a cancelled or failed download leaves a partial file
+            // that nothing knows the name of, and it never gets cleaned up.
+            // Dart only treats this as playable once the state is COMPLETED.
+            transfer.filePath = target.absolutePath
             if (hls) {
                 downloadHls(transfer, target)
             } else {
@@ -196,19 +242,16 @@ object DownloadEngine {
             if (transfer.cancelled.get()) {
                 transfer.state = State.CANCELLED
             } else {
-                transfer.filePath = target.absolutePath
                 transfer.state = State.COMPLETED
             }
+            return null
         } catch (t: Throwable) {
-            transfer.state = if (transfer.cancelled.get()) {
-                State.CANCELLED
-            } else {
-                State.FAILED
+            if (transfer.cancelled.get()) {
+                transfer.state = State.CANCELLED
+                return null
             }
-            transfer.error = t.message ?: t.javaClass.simpleName
+            return t.message ?: t.javaClass.simpleName
         }
-        persist()
-        onChanged?.invoke()
     }
 
     /**
@@ -257,29 +300,54 @@ object DownloadEngine {
     private fun requestFor(url: String, headers: Map<String, String>) =
         Request.Builder().url(url).headers(headers.toHeaders()).build()
 
+    /**
+     * Fetches a file, continuing from whatever is already on disk.
+     *
+     * The `Range` header is what makes a retry cheap. A server that ignores
+     * it answers 200 with the whole file, and the partial copy is discarded
+     * rather than appended to — appending to it would produce a corrupt file
+     * that looks the right size.
+     */
     private fun downloadDirect(transfer: Transfer, target: File) {
-        client.newCall(requestFor(transfer.url, transfer.headers))
-            .execute()
-            .use { response ->
-                if (!response.isSuccessful) {
-                    throw IOException("HTTP ${response.code}")
-                }
-                val body = response.body ?: throw IOException("Empty response")
-                transfer.total = body.contentLength()
-                target.outputStream().use { out ->
-                    val buffer = ByteArray(64 * 1024)
-                    body.byteStream().use { input ->
-                        while (true) {
-                            if (transfer.cancelled.get()) return
-                            val read = input.read(buffer)
-                            if (read <= 0) break
-                            out.write(buffer, 0, read)
-                            transfer.bytes += read
-                            reportOccasionally(transfer)
-                        }
+        val already = if (target.exists()) target.length() else 0L
+
+        val builder = Request.Builder()
+            .url(transfer.url)
+            .headers(transfer.headers.toHeaders())
+        if (already > 0) builder.header("Range", "bytes=$already-")
+
+        client.newCall(builder.build()).execute().use { response ->
+            // The file on disk is already as long as the server says it is —
+            // or longer, if it came from somewhere else. Start over rather
+            // than keep asking for a range that does not exist.
+            if (response.code == 416) {
+                target.delete()
+                throw IOException("Stale partial file; starting again")
+            }
+            if (!response.isSuccessful) throw IOException("HTTP ${response.code}")
+            val body = response.body ?: throw IOException("Empty response")
+
+            val resuming = response.code == 206 && already > 0
+            val offset = if (resuming) already else 0L
+            transfer.bytes = offset
+            transfer.total = body.contentLength().let {
+                if (it < 0) -1 else it + offset
+            }
+
+            java.io.FileOutputStream(target, resuming).use { out ->
+                val buffer = ByteArray(64 * 1024)
+                body.byteStream().use { input ->
+                    while (true) {
+                        if (transfer.cancelled.get()) return
+                        val read = input.read(buffer)
+                        if (read <= 0) break
+                        out.write(buffer, 0, read)
+                        transfer.bytes += read
+                        reportOccasionally(transfer)
                     }
                 }
             }
+        }
     }
 
     /**
