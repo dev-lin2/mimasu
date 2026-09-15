@@ -21,6 +21,10 @@ abstract final class ExtensionMetaKeys {
 
   /// Added by one repository's build tooling, not upstream, so optional.
   static const libVersion = 'tachiyomix.extensionLib';
+
+  /// `"1"` on extensions whose sources carry adult content. Absent on most.
+  static const animeNsfw = 'tachiyomi.animeextension.nsfw';
+  static const mangaNsfw = 'tachiyomi.extension.nsfw';
 }
 
 class ExtensionManagerImpl implements ExtensionManager {
@@ -81,6 +85,10 @@ class ExtensionManagerImpl implements ExtensionManager {
               ? TrustState.trusted
               : TrustState.untrusted,
           isAnime: isAnime,
+          isNsfw:
+              (c.metadata[ExtensionMetaKeys.animeNsfw] ??
+                  c.metadata[ExtensionMetaKeys.mangaNsfw]) ==
+              '1',
           libVersion: c.metadata[ExtensionMetaKeys.libVersion],
           sourceClasses: (classValue ?? '')
               .split(';')

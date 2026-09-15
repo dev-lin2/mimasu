@@ -1,5 +1,6 @@
 import 'package:flutter_bloc/flutter_bloc.dart';
 
+import '../../data/storage/app_prefs.dart';
 import '../../domain/entities/source/anime.dart';
 import '../../domain/repositories/content_source_repository.dart';
 
@@ -51,10 +52,11 @@ class PlaybackState {
 }
 
 class PlayerCubit extends Cubit<PlaybackState> {
-  PlayerCubit(this._content, Anime anime, Episode episode)
+  PlayerCubit(this._content, this._prefs, Anime anime, Episode episode)
     : super(PlaybackState(anime: anime, episode: episode));
 
   final ContentSourceRepository _content;
+  final AppPrefs _prefs;
 
   Future<void> resolve() async {
     emit(state.copyWith(status: PlayerStatus.resolving, clearError: true));
@@ -67,14 +69,27 @@ class PlayerCubit extends Cubit<PlaybackState> {
         state.copyWith(
           status: PlayerStatus.ready,
           streams: streams,
-          // The source orders them; the first is its own preference, which is
-          // a better default than guessing from quality strings.
-          selected: streams.first,
+          selected: _pick(streams),
         ),
       );
     } on SourceFailure catch (e) {
       emit(state.copyWith(status: PlayerStatus.failure, error: e.message));
     }
+  }
+
+  /// Honours the quality preference when a stream's label plausibly matches
+  /// it, and otherwise falls back to the source's own ordering — the first
+  /// entry is the source's preference, which beats guessing from labels it
+  /// wrote for itself.
+  VideoStream _pick(List<VideoStream> streams) {
+    final wanted = _prefs.preferredQuality;
+    if (wanted.isEmpty || wanted.toLowerCase() == 'auto') return streams.first;
+    for (final stream in streams) {
+      if (stream.quality.toLowerCase().contains(wanted.toLowerCase())) {
+        return stream;
+      }
+    }
+    return streams.first;
   }
 
   void selectStream(VideoStream stream) =>

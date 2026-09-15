@@ -4,7 +4,7 @@ import 'package:go_router/go_router.dart';
 
 import '../../../application/browse/browse_cubit.dart';
 import '../../../core/theme/app_theme.dart';
-import '../../widgets/anime_card.dart';
+import '../../widgets/anime_grid.dart';
 import '../../widgets/empty_state.dart';
 
 /// Search queries the selected source directly — results come from it, not
@@ -166,25 +166,9 @@ class _SearchScreenState extends State<SearchScreen> {
       );
     }
 
-    return GridView.builder(
-      padding: const EdgeInsets.fromLTRB(
-        AppSpace.gutter,
-        0,
-        AppSpace.gutter,
-        32,
-      ),
-      gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
-        crossAxisCount: 3,
-        crossAxisSpacing: 12,
-        mainAxisSpacing: 16,
-        childAspectRatio: 0.52,
-      ),
-      itemCount: state.results.length,
-      itemBuilder: (context, i) => AnimeCard(
-        anime: state.results[i],
-        width: double.infinity,
-        onTap: () => context.push('/details', extra: state.results[i]),
-      ),
+    return AnimeGrid(
+      items: state.results,
+      onTap: (anime) => context.push('/details', extra: anime),
     );
   }
 }

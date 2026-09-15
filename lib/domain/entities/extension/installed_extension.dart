@@ -21,6 +21,7 @@ class InstalledExtension {
     required this.signatureSha256,
     required this.trust,
     required this.isAnime,
+    this.isNsfw = false,
     this.libVersion,
     this.sourceClasses = const [],
   });
@@ -38,6 +39,11 @@ class InstalledExtension {
   /// Manga extensions can be installed by the user independently of Mimasu;
   /// they are listed but never loaded.
   final bool isAnime;
+
+  /// Declared by the extension's own manifest. Sources from these are hidden
+  /// unless the user turns them on, which is why it is carried this far up
+  /// rather than being decided at the browse layer.
+  final bool isNsfw;
 
   final String? libVersion;
 

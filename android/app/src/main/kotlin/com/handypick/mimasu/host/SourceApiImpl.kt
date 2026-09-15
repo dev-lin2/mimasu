@@ -8,6 +8,7 @@ import eu.kanade.tachiyomi.animesource.AnimeSourceFactory
 import eu.kanade.tachiyomi.animesource.model.AnimeFilterList
 import eu.kanade.tachiyomi.animesource.model.SAnime
 import eu.kanade.tachiyomi.animesource.model.SEpisode
+import eu.kanade.tachiyomi.animesource.model.Track
 import eu.kanade.tachiyomi.animesource.model.Video
 import kotlinx.coroutines.runBlocking
 import java.util.concurrent.Executors
@@ -218,9 +219,11 @@ class SourceApiImpl(private val context: Context) : SourceApi {
                 (0 until h.size).associate { i -> h.name(i) to h.value(i) }
             } ?: emptyMap()
         },
-        subtitleUrls = safe(emptyList()) { subtitleTracks.map { it.url } },
-        audioUrls = safe(emptyList()) { audioTracks.map { it.url } },
+        subtitleTracks = safe(emptyList()) { subtitleTracks.map { it.toItem() } },
+        audioTracks = safe(emptyList()) { audioTracks.map { it.toItem() } },
     )
+
+    private fun Track.toItem() = TrackItem(url = url, label = lang)
 
     private fun Throwable.describe(): String {
         val cause = cause?.let { " <- ${it.javaClass.simpleName}: ${it.message}" } ?: ""

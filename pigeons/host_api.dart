@@ -289,6 +289,22 @@ class EpisodeItem {
   final String? scanlator;
 }
 
+/// One external track alongside a video.
+///
+/// The language matters: a source commonly offers eight subtitle tracks and
+/// the url alone gives the player no way to tell them apart, so an earlier
+/// version of this bridge that carried only urls made the subtitle-language
+/// preference unimplementable.
+class TrackItem {
+  TrackItem({required this.url, required this.label});
+
+  final String url;
+
+  /// Whatever the source called it — a language name, a code, or empty.
+  /// Not normalised here; the host does not know the source's conventions.
+  final String label;
+}
+
 /// A playable stream. [headers] matters: many sources 403 without a Referer,
 /// and section 8 requires passing them to the player.
 class VideoItem {
@@ -297,16 +313,16 @@ class VideoItem {
     required this.videoUrl,
     required this.quality,
     required this.headers,
-    required this.subtitleUrls,
-    required this.audioUrls,
+    required this.subtitleTracks,
+    required this.audioTracks,
   });
 
   final String url;
   final String? videoUrl;
   final String quality;
   final Map<String?, String?> headers;
-  final List<String?> subtitleUrls;
-  final List<String?> audioUrls;
+  final List<TrackItem?> subtitleTracks;
+  final List<TrackItem?> audioTracks;
 }
 
 /// How the catalogue is being asked for.

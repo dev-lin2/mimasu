@@ -434,6 +434,40 @@ data class EpisodeItem (
 }
 
 /**
+ * One external track alongside a video.
+ *
+ * The language matters: a source commonly offers eight subtitle tracks and
+ * the url alone gives the player no way to tell them apart, so an earlier
+ * version of this bridge that carried only urls made the subtitle-language
+ * preference unimplementable.
+ *
+ * Generated class from Pigeon that represents data sent in messages.
+ */
+data class TrackItem (
+  val url: String,
+  /**
+   * Whatever the source called it — a language name, a code, or empty.
+   * Not normalised here; the host does not know the source's conventions.
+   */
+  val label: String
+)
+ {
+  companion object {
+    fun fromList(pigeonVar_list: List<Any?>): TrackItem {
+      val url = pigeonVar_list[0] as String
+      val label = pigeonVar_list[1] as String
+      return TrackItem(url, label)
+    }
+  }
+  fun toList(): List<Any?> {
+    return listOf(
+      url,
+      label,
+    )
+  }
+}
+
+/**
  * A playable stream. [headers] matters: many sources 403 without a Referer,
  * and section 8 requires passing them to the player.
  *
@@ -444,8 +478,8 @@ data class VideoItem (
   val videoUrl: String? = null,
   val quality: String,
   val headers: Map<String?, String?>,
-  val subtitleUrls: List<String?>,
-  val audioUrls: List<String?>
+  val subtitleTracks: List<TrackItem?>,
+  val audioTracks: List<TrackItem?>
 )
  {
   companion object {
@@ -454,9 +488,9 @@ data class VideoItem (
       val videoUrl = pigeonVar_list[1] as String?
       val quality = pigeonVar_list[2] as String
       val headers = pigeonVar_list[3] as Map<String?, String?>
-      val subtitleUrls = pigeonVar_list[4] as List<String?>
-      val audioUrls = pigeonVar_list[5] as List<String?>
-      return VideoItem(url, videoUrl, quality, headers, subtitleUrls, audioUrls)
+      val subtitleTracks = pigeonVar_list[4] as List<TrackItem?>
+      val audioTracks = pigeonVar_list[5] as List<TrackItem?>
+      return VideoItem(url, videoUrl, quality, headers, subtitleTracks, audioTracks)
     }
   }
   fun toList(): List<Any?> {
@@ -465,8 +499,8 @@ data class VideoItem (
       videoUrl,
       quality,
       headers,
-      subtitleUrls,
-      audioUrls,
+      subtitleTracks,
+      audioTracks,
     )
   }
 }
@@ -630,25 +664,30 @@ private open class HostApiPigeonCodec : StandardMessageCodec() {
       }
       139.toByte() -> {
         return (readValue(buffer) as? List<Any?>)?.let {
-          VideoItem.fromList(it)
+          TrackItem.fromList(it)
         }
       }
       140.toByte() -> {
         return (readValue(buffer) as? List<Any?>)?.let {
-          BrowseResult.fromList(it)
+          VideoItem.fromList(it)
         }
       }
       141.toByte() -> {
         return (readValue(buffer) as? List<Any?>)?.let {
-          DetailsResult.fromList(it)
+          BrowseResult.fromList(it)
         }
       }
       142.toByte() -> {
         return (readValue(buffer) as? List<Any?>)?.let {
-          EpisodesResult.fromList(it)
+          DetailsResult.fromList(it)
         }
       }
       143.toByte() -> {
+        return (readValue(buffer) as? List<Any?>)?.let {
+          EpisodesResult.fromList(it)
+        }
+      }
+      144.toByte() -> {
         return (readValue(buffer) as? List<Any?>)?.let {
           VideosResult.fromList(it)
         }
@@ -698,24 +737,28 @@ private open class HostApiPigeonCodec : StandardMessageCodec() {
         stream.write(138)
         writeValue(stream, value.toList())
       }
-      is VideoItem -> {
+      is TrackItem -> {
         stream.write(139)
         writeValue(stream, value.toList())
       }
-      is BrowseResult -> {
+      is VideoItem -> {
         stream.write(140)
         writeValue(stream, value.toList())
       }
-      is DetailsResult -> {
+      is BrowseResult -> {
         stream.write(141)
         writeValue(stream, value.toList())
       }
-      is EpisodesResult -> {
+      is DetailsResult -> {
         stream.write(142)
         writeValue(stream, value.toList())
       }
-      is VideosResult -> {
+      is EpisodesResult -> {
         stream.write(143)
+        writeValue(stream, value.toList())
+      }
+      is VideosResult -> {
+        stream.write(144)
         writeValue(stream, value.toList())
       }
       else -> super.writeValue(stream, value)

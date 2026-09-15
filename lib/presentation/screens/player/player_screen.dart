@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
@@ -5,8 +7,11 @@ import 'package:media_kit/media_kit.dart';
 import 'package:media_kit_video/media_kit_video.dart';
 import 'package:wakelock_plus/wakelock_plus.dart';
 
+import '../../../application/library/library_cubit.dart';
 import '../../../application/player/player_cubit.dart';
+import '../../../core/di/locator.dart';
 import '../../../core/theme/app_theme.dart';
+import '../../../data/storage/app_prefs.dart';
 import '../../../domain/entities/source/anime.dart';
 
 /// Fullscreen landscape player (INSTRUCTIONS.md §8).
@@ -27,6 +32,31 @@ class _PlayerScreenState extends State<PlayerScreen> {
   /// What is currently open, so a rebuild does not restart playback.
   String? _openedUrl;
 
+  StreamSubscription<Duration>? _positionSub;
+  StreamSubscription<Duration>? _durationSub;
+
+  /// The player reports a duration of zero until the stream is probed, and
+  /// recording that would mark everything as instantly finished.
+  Duration _duration = Duration.zero;
+
+  /// Where playback currently is, so switching quality can carry it over.
+  Duration _position = Duration.zero;
+
+  /// Where to jump to once playback is genuinely under way.
+  ///
+  /// libmpv accepts — and then quietly discards — a seek issued while it is
+  /// still opening a network stream, and it reports a duration several
+  /// seconds before it produces a first position. So neither `Media.start`
+  /// nor a seek on the duration event survives. The first non-zero *position*
+  /// is the earliest proof that the demuxer is actually running.
+  Duration? _pendingSeek;
+
+  /// Captured in `initState`: `dispose` must not reach into the tree for
+  /// these, and they never change for the life of this screen.
+  late final LibraryCubit _library = context.read<LibraryCubit>();
+  late final String _animeId;
+  late final String _episodeUrl;
+
   @override
   void initState() {
     super.initState();
@@ -36,11 +66,60 @@ class _PlayerScreenState extends State<PlayerScreen> {
     ]);
     SystemChrome.setEnabledSystemUIMode(SystemUiMode.immersiveSticky);
     WakelockPlus.enable();
-    context.read<PlayerCubit>().resolve();
+    final playback = context.read<PlayerCubit>();
+    _animeId = playback.state.anime.id;
+    _episodeUrl = playback.state.episode.url;
+    playback.resolve();
+    _watchPlayback();
   }
+
+  /// Progress is written from here rather than from the controls, so it is
+  /// recorded however playback advances — including a seek the user made.
+  void _watchPlayback() {
+    _durationSub = _player.stream.duration.listen((d) {
+      if (d > Duration.zero) _duration = d;
+    });
+    _positionSub = _player.stream.position.listen((position) {
+      if (!mounted) return;
+      _position = position;
+      if (_duration <= Duration.zero) return;
+
+      final seekTo = _pendingSeek;
+      if (seekTo != null) {
+        // Wait for playback to actually be moving before jumping.
+        if (position <= Duration.zero) return;
+        _pendingSeek = null;
+        if (seekTo < _duration) {
+          unawaited(_player.seek(seekTo));
+          // Recording now would write the pre-seek position over the very
+          // point being resumed to.
+          return;
+        }
+      }
+
+      unawaited(
+        _library.recordProgress(
+          animeId: _animeId,
+          episodeUrl: _episodeUrl,
+          position: position,
+          duration: _duration,
+        ),
+      );
+    });
+  }
+
+  /// Null when there is nothing worth resuming — not started, or finished,
+  /// in which case a rewatch should begin at the top rather than the credits.
+  Duration? _resumePoint() =>
+      _library.state.progressFor(_animeId, _episodeUrl)?.resumeAt;
 
   @override
   void dispose() {
+    _positionSub?.cancel();
+    _durationSub?.cancel();
+    // The in-memory position is ahead of what was last written to disk, by up
+    // to ten seconds. Backing out of an episode is exactly when that matters.
+    unawaited(_library.flush(_animeId, _episodeUrl));
     WakelockPlus.disable();
     SystemChrome.setPreferredOrientations(DeviceOrientation.values);
     SystemChrome.setEnabledSystemUIMode(SystemUiMode.edgeToEdge);
@@ -50,14 +129,27 @@ class _PlayerScreenState extends State<PlayerScreen> {
 
   Future<void> _open(VideoStream stream) async {
     if (_openedUrl == stream.playbackUrl) return;
+    // The first open resumes where the user left off; a later one is a
+    // quality switch, which should carry on from where they are rather than
+    // start the episode again.
+    _pendingSeek = _openedUrl == null ? _resumePoint() : _position;
     _openedUrl = stream.playbackUrl;
+    _duration = Duration.zero;
+
     await _player.open(
       Media(stream.playbackUrl, httpHeaders: stream.headers),
     );
     // External subtitle tracks the source supplied alongside the video.
-    final subtitle = stream.subtitleUrls.firstOrNull;
+    final language = locator<AppPrefs>().subtitleLanguage;
+    if (language.toLowerCase() == 'off') {
+      await _player.setSubtitleTrack(SubtitleTrack.no());
+      return;
+    }
+    final subtitle = stream.preferredSubtitle(language);
     if (subtitle != null) {
-      await _player.setSubtitleTrack(SubtitleTrack.uri(subtitle));
+      await _player.setSubtitleTrack(
+        SubtitleTrack.uri(subtitle.url, title: subtitle.label),
+      );
     }
   }
 

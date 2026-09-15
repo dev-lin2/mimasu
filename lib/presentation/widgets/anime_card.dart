@@ -11,14 +11,24 @@ import '../../domain/entities/source/anime.dart';
 class AnimeCard extends StatelessWidget {
   const AnimeCard({
     required this.anime,
-    required this.width,
+    this.width,
+    this.subtitle,
     this.onTap,
+    this.onLongPress,
     super.key,
   });
 
   final Anime anime;
-  final double width;
+
+  /// Null in a grid, where the cell decides. A shelf scrolls horizontally and
+  /// has no width to inherit, so it passes one.
+  final double? width;
+
+  /// Replaces the source's own status line when given.
+  final String? subtitle;
+
   final VoidCallback? onTap;
+  final VoidCallback? onLongPress;
 
   @override
   Widget build(BuildContext context) {
@@ -28,6 +38,7 @@ class AnimeCard extends StatelessWidget {
       width: width,
       child: InkWell(
         onTap: onTap,
+        onLongPress: onLongPress,
         borderRadius: BorderRadius.circular(AppSpace.radiusPoster),
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
@@ -62,9 +73,15 @@ class AnimeCard extends StatelessWidget {
                 fontWeight: FontWeight.w500,
               ),
             ),
-            if (anime.status != AnimeStatus.unknown) ...[
+            if (subtitle != null) ...[
               const SizedBox(height: 2),
-              Text(anime.status.label, style: AppText.meta.copyWith(fontSize: 11)),
+              Text(subtitle!, style: AppText.meta.copyWith(fontSize: 11)),
+            ] else if (anime.status != AnimeStatus.unknown) ...[
+              const SizedBox(height: 2),
+              Text(
+                anime.status.label,
+                style: AppText.meta.copyWith(fontSize: 11),
+              ),
             ],
           ],
         ),

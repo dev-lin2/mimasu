@@ -98,8 +98,8 @@ class ContentSourceNative implements ContentSourceRepository {
           for (final e in v.headers.entries)
             if (e.key != null && e.value != null) e.key!: e.value!,
         },
-        subtitleUrls: v.subtitleUrls.whereType<String>().toList(),
-        audioUrls: v.audioUrls.whereType<String>().toList(),
+        subtitleTracks: _tracks(v.subtitleTracks),
+        audioTracks: _tracks(v.audioTracks),
       );
     }).toList();
 
@@ -177,3 +177,9 @@ class ContentSourceNative implements ContentSourceRepository {
     );
   }
 }
+
+/// Drops the nulls pigeon's generated types allow but the host never sends.
+List<MediaTrack> _tracks(List<TrackItem?> raw) => [
+  for (final t in raw)
+    if (t != null) MediaTrack(url: t.url, label: t.label),
+];

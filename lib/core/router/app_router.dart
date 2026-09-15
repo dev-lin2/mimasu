@@ -120,6 +120,7 @@ GoRouter buildRouter(AppPrefs prefs) {
           return BlocProvider(
             create: (_) => PlayerCubit(
               locator<ContentSourceRepository>(),
+              prefs,
               anime,
               episode,
             ),

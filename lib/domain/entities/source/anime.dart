@@ -29,6 +29,25 @@ class SourceRef {
 
   @override
   int get hashCode => Object.hash(packageName, className);
+
+  Map<String, dynamic> toJson() => {
+    'packageName': packageName,
+    'className': className,
+    'sourceName': sourceName,
+  };
+
+  /// Null rather than throwing on a malformed record: one corrupt library
+  /// entry must not stop the library from loading.
+  static SourceRef? fromJson(Map<dynamic, dynamic> json) {
+    final package = json['packageName'];
+    final className = json['className'];
+    if (package is! String || className is! String) return null;
+    return SourceRef(
+      packageName: package,
+      className: className,
+      sourceName: json['sourceName'] as String? ?? package,
+    );
+  }
 }
 
 enum AnimeStatus {
@@ -92,6 +111,32 @@ class Anime {
 
   /// Stable across sessions, and distinct per source.
   String get id => '${source.key}|$url';
+
+  /// Only the listing-level fields are persisted. Details are re-fetched from
+  /// the source when the title is opened, so storing a stale synopsis would
+  /// buy nothing and could contradict what the source now says.
+  Map<String, dynamic> toJson() => {
+    'url': url,
+    'title': title,
+    'source': source.toJson(),
+    'thumbnailUrl': thumbnailUrl,
+  };
+
+  static Anime? fromJson(Map<dynamic, dynamic> json) {
+    final url = json['url'];
+    final title = json['title'];
+    final rawSource = json['source'];
+    if (url is! String || title is! String) return null;
+    if (rawSource is! Map) return null;
+    final source = SourceRef.fromJson(rawSource);
+    if (source == null) return null;
+    return Anime(
+      url: url,
+      title: title,
+      source: source,
+      thumbnailUrl: json['thumbnailUrl'] as String?,
+    );
+  }
 }
 
 class Episode {
@@ -115,6 +160,29 @@ class Episode {
   bool get hasNumber => number >= 0;
 }
 
+/// One external track offered alongside a video.
+class MediaTrack {
+  const MediaTrack({required this.url, required this.label});
+
+  final String url;
+
+  /// The source's own wording — "English", "en", "eng", or nothing at all.
+  final String label;
+
+  /// Whether this track plausibly matches a language the user asked for.
+  ///
+  /// Deliberately loose. Sources label tracks however they like, and a
+  /// preference of "English" should still match "en" or "English [CC]". A
+  /// false positive here costs the user one tap; being strict costs them the
+  /// feature entirely.
+  bool matches(String language) {
+    if (language.isEmpty || label.isEmpty) return false;
+    final a = label.toLowerCase();
+    final b = language.toLowerCase();
+    return a.contains(b) || b.contains(a);
+  }
+}
+
 /// One playable stream. [headers] must reach the player: many sources 403
 /// without a Referer (INSTRUCTIONS.md §8).
 class VideoStream {
@@ -123,16 +191,27 @@ class VideoStream {
     required this.quality,
     this.videoUrl,
     this.headers = const {},
-    this.subtitleUrls = const [],
-    this.audioUrls = const [],
+    this.subtitleTracks = const [],
+    this.audioTracks = const [],
   });
 
   final String url;
   final String quality;
   final String? videoUrl;
   final Map<String, String> headers;
-  final List<String> subtitleUrls;
-  final List<String> audioUrls;
+  final List<MediaTrack> subtitleTracks;
+  final List<MediaTrack> audioTracks;
+
+  /// The track to show, given a preferred language. Falls back to the first
+  /// the source offered, because a source that supplies exactly one subtitle
+  /// track usually means it.
+  MediaTrack? preferredSubtitle(String language) {
+    if (subtitleTracks.isEmpty) return null;
+    for (final track in subtitleTracks) {
+      if (track.matches(language)) return track;
+    }
+    return subtitleTracks.first;
+  }
 
   /// What the player should actually open.
   String get playbackUrl => (videoUrl?.isNotEmpty ?? false) ? videoUrl! : url;

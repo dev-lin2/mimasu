@@ -3,6 +3,7 @@ import 'package:flutter_bloc/flutter_bloc.dart';
 import '../../domain/entities/extension/installed_extension.dart';
 import '../../domain/entities/source/anime.dart';
 import '../../domain/repositories/content_source_repository.dart';
+import '../../data/storage/app_prefs.dart';
 import '../../domain/repositories/extension_manager.dart';
 
 enum BrowseStatus { initial, loading, ready, failure, noSource }
@@ -66,10 +67,12 @@ class BrowseState {
 }
 
 class BrowseCubit extends Cubit<BrowseState> {
-  BrowseCubit(this._content, this._manager) : super(const BrowseState());
+  BrowseCubit(this._content, this._manager, this._prefs)
+    : super(const BrowseState());
 
   final ContentSourceRepository _content;
   final ExtensionManager _manager;
+  final AppPrefs _prefs;
 
   /// Finds usable sources, then loads the first one's shelves.
   Future<void> start() async {
@@ -158,8 +161,11 @@ class BrowseCubit extends Cubit<BrowseState> {
   /// those itself, so one ref per class is the right granularity here.
   Future<List<SourceRef>> _usableSources() async {
     final installed = await _manager.installed();
+    final allowNsfw = _prefs.showNsfwSources;
     final out = <SourceRef>[];
-    for (final e in installed.where((e) => e.isUsable)) {
+    for (final e in installed.where(
+      (e) => e.isUsable && (allowNsfw || !e.isNsfw),
+    )) {
       for (final className in e.sourceClasses) {
         out.add(
           SourceRef(

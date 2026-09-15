@@ -489,6 +489,35 @@ class EpisodeItem {
   }
 }
 
+
+class TrackItem {
+  TrackItem({
+    required this.url,
+    required this.label,
+  });
+
+  String url;
+
+  /// Whatever the source called it — a language name, a code, or empty.
+  /// Not normalised here; the host does not know the source's conventions.
+  String label;
+
+  Object encode() {
+    return <Object?>[
+      url,
+      label,
+    ];
+  }
+
+  static TrackItem decode(Object result) {
+    result as List<Object?>;
+    return TrackItem(
+      url: result[0]! as String,
+      label: result[1]! as String,
+    );
+  }
+}
+
 /// A playable stream. [headers] matters: many sources 403 without a Referer,
 /// and section 8 requires passing them to the player.
 class VideoItem {
@@ -497,8 +526,8 @@ class VideoItem {
     this.videoUrl,
     required this.quality,
     required this.headers,
-    required this.subtitleUrls,
-    required this.audioUrls,
+    required this.subtitleTracks,
+    required this.audioTracks,
   });
 
   String url;
@@ -509,9 +538,9 @@ class VideoItem {
 
   Map<String?, String?> headers;
 
-  List<String?> subtitleUrls;
+  List<TrackItem?> subtitleTracks;
 
-  List<String?> audioUrls;
+  List<TrackItem?> audioTracks;
 
   Object encode() {
     return <Object?>[
@@ -519,8 +548,8 @@ class VideoItem {
       videoUrl,
       quality,
       headers,
-      subtitleUrls,
-      audioUrls,
+      subtitleTracks,
+      audioTracks,
     ];
   }
 
@@ -531,8 +560,8 @@ class VideoItem {
       videoUrl: result[1] as String?,
       quality: result[2]! as String,
       headers: (result[3] as Map<Object?, Object?>?)!.cast<String?, String?>(),
-      subtitleUrls: (result[4] as List<Object?>?)!.cast<String?>(),
-      audioUrls: (result[5] as List<Object?>?)!.cast<String?>(),
+      subtitleTracks: (result[4] as List<Object?>?)!.cast<TrackItem?>(),
+      audioTracks: (result[5] as List<Object?>?)!.cast<TrackItem?>(),
     );
   }
 }
@@ -714,20 +743,23 @@ class _PigeonCodec extends StandardMessageCodec {
     }    else if (value is EpisodeItem) {
       buffer.putUint8(138);
       writeValue(buffer, value.encode());
-    }    else if (value is VideoItem) {
+    }    else if (value is TrackItem) {
       buffer.putUint8(139);
       writeValue(buffer, value.encode());
-    }    else if (value is BrowseResult) {
+    }    else if (value is VideoItem) {
       buffer.putUint8(140);
       writeValue(buffer, value.encode());
-    }    else if (value is DetailsResult) {
+    }    else if (value is BrowseResult) {
       buffer.putUint8(141);
       writeValue(buffer, value.encode());
-    }    else if (value is EpisodesResult) {
+    }    else if (value is DetailsResult) {
       buffer.putUint8(142);
       writeValue(buffer, value.encode());
-    }    else if (value is VideosResult) {
+    }    else if (value is EpisodesResult) {
       buffer.putUint8(143);
+      writeValue(buffer, value.encode());
+    }    else if (value is VideosResult) {
+      buffer.putUint8(144);
       writeValue(buffer, value.encode());
     } else {
       super.writeValue(buffer, value);
@@ -759,14 +791,16 @@ class _PigeonCodec extends StandardMessageCodec {
       case 138: 
         return EpisodeItem.decode(readValue(buffer)!);
       case 139: 
-        return VideoItem.decode(readValue(buffer)!);
+        return TrackItem.decode(readValue(buffer)!);
       case 140: 
-        return BrowseResult.decode(readValue(buffer)!);
+        return VideoItem.decode(readValue(buffer)!);
       case 141: 
-        return DetailsResult.decode(readValue(buffer)!);
+        return BrowseResult.decode(readValue(buffer)!);
       case 142: 
-        return EpisodesResult.decode(readValue(buffer)!);
+        return DetailsResult.decode(readValue(buffer)!);
       case 143: 
+        return EpisodesResult.decode(readValue(buffer)!);
+      case 144: 
         return VideosResult.decode(readValue(buffer)!);
       default:
         return super.readValueOfType(type, buffer);

@@ -3,7 +3,9 @@ import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:go_router/go_router.dart';
 
 import '../../../application/details/details_cubit.dart';
+import '../../../application/library/library_cubit.dart';
 import '../../../core/theme/app_theme.dart';
+import '../../../domain/entities/library/watch_progress.dart';
 import '../../../domain/entities/source/anime.dart';
 import '../../widgets/empty_state.dart';
 import '../../widgets/section_head.dart';
@@ -107,6 +109,13 @@ class _DetailsScreenState extends State<DetailsScreen> {
                       else
                         for (final e in state.episodes)
                           _EpisodeRow(anime: anime, episode: e),
+                      if (state.episodes.isNotEmpty) ...[
+                        const SizedBox(height: 4),
+                        const Text(
+                          'Hold an episode to mark it watched.',
+                          style: AppText.meta,
+                        ),
+                      ],
                     ],
                   ),
                 ),
@@ -129,6 +138,7 @@ class _Banner extends StatelessWidget {
       expandedHeight: 260,
       pinned: true,
       backgroundColor: AppColors.ground,
+      actions: [_SaveButton(anime: anime)],
       flexibleSpace: FlexibleSpaceBar(
         background: Stack(
           fit: StackFit.expand,
@@ -305,57 +315,73 @@ class _EpisodeRow extends StatelessWidget {
       if (episode.uploadedAt != null) _date(episode.uploadedAt!),
     ].join('  ·  ');
 
+    final progress = context.select<LibraryCubit, WatchProgress?>(
+      (c) => c.state.progressFor(anime.id, episode.url),
+    );
+    final watched = progress?.finished ?? false;
+
     return Padding(
       padding: const EdgeInsets.only(bottom: 14),
       child: InkWell(
         onTap: () => context.push('/player', extra: (anime, episode)),
+        onLongPress: () => context.read<LibraryCubit>().toggleWatched(
+          animeId: anime.id,
+          episodeUrl: episode.url,
+        ),
         borderRadius: BorderRadius.circular(8),
-        child: Row(
-          children: [
-            Container(
-              width: 40,
-              height: 40,
-              alignment: Alignment.center,
-              decoration: BoxDecoration(
-                color: AppColors.surfaceRaised,
-                borderRadius: BorderRadius.circular(10),
-              ),
-              child: Text(
-                episode.hasNumber
-                    ? episode.number
-                          .toStringAsFixed(episode.number % 1 == 0 ? 0 : 1)
-                    : '–',
-                style: const TextStyle(
-                  color: AppColors.textSecondary,
-                  fontSize: 13,
-                  fontWeight: FontWeight.w600,
+        child: Opacity(
+          // Watched episodes stay legible but stop competing with the next
+          // unwatched one, which is what the user is usually looking for.
+          opacity: watched ? 0.45 : 1,
+          child: Row(
+            children: [
+              _NumberBadge(episode: episode, watched: watched),
+              const SizedBox(width: 12),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      episode.name,
+                      maxLines: 2,
+                      overflow: TextOverflow.ellipsis,
+                      style: AppText.body.copyWith(fontSize: 14),
+                    ),
+                    if (meta.isNotEmpty) ...[
+                      const SizedBox(height: 3),
+                      Text(meta, style: AppText.meta),
+                    ],
+                    // Only for a part-watched episode: a bar at 0% or 100%
+                    // says nothing the badge has not already said.
+                    if (progress != null && progress.started) ...[
+                      const SizedBox(height: 6),
+                      ClipRRect(
+                        borderRadius: BorderRadius.circular(2),
+                        child: LinearProgressIndicator(
+                          value: progress.fraction,
+                          minHeight: 3,
+                          backgroundColor: AppColors.surfaceRaised,
+                          valueColor: const AlwaysStoppedAnimation(
+                            AppColors.accent,
+                          ),
+                        ),
+                      ),
+                    ],
+                  ],
                 ),
               ),
-            ),
-            const SizedBox(width: 12),
-            Expanded(
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Text(
-                    episode.name,
-                    maxLines: 2,
-                    overflow: TextOverflow.ellipsis,
-                    style: AppText.body.copyWith(fontSize: 14),
-                  ),
-                  if (meta.isNotEmpty) ...[
-                    const SizedBox(height: 3),
-                    Text(meta, style: AppText.meta),
-                  ],
-                ],
+              const SizedBox(width: 8),
+              Icon(
+                progress != null && progress.started
+                    ? Icons.play_circle
+                    : Icons.play_circle_outline,
+                size: 22,
+                color: progress != null && progress.started
+                    ? AppColors.accent
+                    : AppColors.textTertiary,
               ),
-            ),
-            const Icon(
-              Icons.play_circle_outline,
-              size: 22,
-              color: AppColors.textTertiary,
-            ),
-          ],
+            ],
+          ),
         ),
       ),
     );
@@ -364,4 +390,69 @@ class _EpisodeRow extends StatelessWidget {
   static String _date(DateTime d) =>
       '${d.year}-${d.month.toString().padLeft(2, '0')}-'
       '${d.day.toString().padLeft(2, '0')}';
+}
+
+class _NumberBadge extends StatelessWidget {
+  const _NumberBadge({required this.episode, required this.watched});
+
+  final Episode episode;
+  final bool watched;
+
+  @override
+  Widget build(BuildContext context) => Container(
+    width: 40,
+    height: 40,
+    alignment: Alignment.center,
+    decoration: BoxDecoration(
+      color: AppColors.surfaceRaised,
+      borderRadius: BorderRadius.circular(10),
+    ),
+    child: watched
+        ? const Icon(Icons.check, size: 18, color: AppColors.accent)
+        : Text(
+            episode.hasNumber
+                ? episode.number.toStringAsFixed(
+                    episode.number % 1 == 0 ? 0 : 1,
+                  )
+                : '–',
+            style: const TextStyle(
+              color: AppColors.textSecondary,
+              fontSize: 13,
+              fontWeight: FontWeight.w600,
+            ),
+          ),
+  );
+}
+
+class _SaveButton extends StatelessWidget {
+  const _SaveButton({required this.anime});
+  final Anime anime;
+
+  @override
+  Widget build(BuildContext context) {
+    final saved = context.select<LibraryCubit, bool>(
+      (c) => c.state.isSaved(anime.id),
+    );
+    return IconButton(
+      tooltip: saved ? 'Remove from library' : 'Save to library',
+      icon: Icon(
+        saved ? Icons.bookmark : Icons.bookmark_outline,
+        color: saved ? AppColors.accent : AppColors.textPrimary,
+      ),
+      onPressed: () {
+        context.read<LibraryCubit>().toggleSaved(anime);
+        ScaffoldMessenger.of(context)
+          ..hideCurrentSnackBar()
+          ..showSnackBar(
+            SnackBar(
+              behavior: SnackBarBehavior.floating,
+              duration: const Duration(seconds: 2),
+              content: Text(
+                saved ? 'Removed from library' : 'Saved to library',
+              ),
+            ),
+          );
+      },
+    );
+  }
 }

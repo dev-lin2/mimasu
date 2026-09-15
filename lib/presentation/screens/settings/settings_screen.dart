@@ -1,9 +1,13 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:go_router/go_router.dart';
+import 'package:url_launcher/url_launcher.dart';
 
+import '../../../application/browse/browse_cubit.dart';
 import '../../../application/extensions/extensions_cubit.dart';
+import '../../../core/di/locator.dart';
 import '../../../core/theme/app_theme.dart';
+import '../../../data/storage/app_prefs.dart';
 import '../../widgets/settings_row.dart';
 
 /// Settings, as designed. Rows that lead nowhere yet are disabled and say
@@ -16,14 +20,77 @@ class SettingsScreen extends StatefulWidget {
 }
 
 class _SettingsScreenState extends State<SettingsScreen> {
-  // Local until there is a settings store to persist them (Phase 5).
-  bool _wifiOnly = true;
-  bool _deleteAfterWatching = false;
-  bool _nsfw = false;
+  final AppPrefs _prefs = locator<AppPrefs>();
 
-  void _pending(String what) => ScaffoldMessenger.of(context).showSnackBar(
-    SnackBar(content: Text('$what arrives with the extension host.')),
-  );
+  /// Written straight through to storage. The rebuild is only so the row
+  /// redraws — the preference is already saved by the time it happens.
+  Future<void> _set(Future<void> Function() write) async {
+    await write();
+    if (mounted) setState(() {});
+  }
+
+  /// The only way anyone gets this app is by building it, so the link to the
+  /// repository is a functional part of the product rather than a credit.
+  static final _repository = Uri.parse('https://github.com/dev-lin2/mimasu');
+
+  Future<void> _openSourceCode() async {
+    final opened = await launchUrl(
+      _repository,
+      mode: LaunchMode.externalApplication,
+    );
+    if (!opened && mounted) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('No browser to open $_repository')),
+      );
+    }
+  }
+
+  Future<void> _choose({
+    required String title,
+    required List<String> options,
+    required String current,
+    required Future<void> Function(String) onPick,
+  }) async {
+    final picked = await showModalBottomSheet<String>(
+      context: context,
+      backgroundColor: AppColors.surfaceRaised,
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(18)),
+      ),
+      builder: (sheet) => SafeArea(
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Padding(
+              padding: const EdgeInsets.fromLTRB(20, 18, 20, 6),
+              child: Text(
+                title,
+                style: AppText.body.copyWith(fontWeight: FontWeight.w600),
+              ),
+            ),
+            for (final option in options)
+              ListTile(
+                dense: true,
+                leading: Icon(
+                  option == current
+                      ? Icons.radio_button_checked
+                      : Icons.radio_button_unchecked,
+                  size: 19,
+                  color: option == current
+                      ? AppColors.accent
+                      : AppColors.textTertiary,
+                ),
+                title: Text(option, style: AppText.body),
+                onTap: () => Navigator.of(sheet).pop(option),
+              ),
+            const SizedBox(height: 8),
+          ],
+        ),
+      ),
+    );
+    if (picked != null) await _set(() => onPick(picked));
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -59,8 +126,19 @@ class _SettingsScreenState extends State<SettingsScreen> {
                   icon: Icons.visibility_off_outlined,
                   title: 'Show NSFW sources',
                   summary: 'Hidden unless a repository marks them',
-                  toggle: _nsfw,
-                  onToggle: (v) => setState(() => _nsfw = v),
+                  toggle: _prefs.showNsfwSources,
+                  // Browse holds its source list in memory, so flipping this
+                  // has to tell it to look again or the change appears to
+                  // have been ignored until the next launch.
+                  onToggle: (v) {
+                    // Read the cubit before awaiting: the context must not be
+                    // touched after the write completes.
+                    final browse = context.read<BrowseCubit>();
+                    _set(() async {
+                      await _prefs.setShowNsfwSources(v);
+                      await browse.refreshSources();
+                    });
+                  },
                 ),
               ],
             ),
@@ -78,15 +156,16 @@ class _SettingsScreenState extends State<SettingsScreen> {
                 SettingsRow(
                   icon: Icons.wifi,
                   title: 'Only download on Wi-Fi',
-                  toggle: _wifiOnly,
-                  onToggle: (v) => setState(() => _wifiOnly = v),
+                  toggle: _prefs.downloadOnWifiOnly,
+                  onToggle: (v) => _set(() => _prefs.setDownloadOnWifiOnly(v)),
                 ),
                 SettingsRow(
                   icon: Icons.auto_delete_outlined,
                   title: 'Delete after watching',
                   summary: 'Removes the file once an episode finishes',
-                  toggle: _deleteAfterWatching,
-                  onToggle: (v) => setState(() => _deleteAfterWatching = v),
+                  toggle: _prefs.deleteAfterWatching,
+                  onToggle: (v) =>
+                      _set(() => _prefs.setDeleteAfterWatching(v)),
                 ),
               ],
             ),
@@ -98,16 +177,26 @@ class _SettingsScreenState extends State<SettingsScreen> {
                 SettingsRow(
                   icon: Icons.hd_outlined,
                   title: 'Preferred quality',
-                  summary: 'Needs a source that reports qualities',
-                  enabled: false,
-                  onTap: () => _pending('Quality selection'),
+                  summary: 'Falls back to the source order when unavailable',
+                  value: _prefs.preferredQuality,
+                  onTap: () => _choose(
+                    title: 'Preferred quality',
+                    options: kQualityOptions,
+                    current: _prefs.preferredQuality,
+                    onPick: _prefs.setPreferredQuality,
+                  ),
                 ),
                 SettingsRow(
                   icon: Icons.closed_caption_outlined,
                   title: 'Subtitle language',
-                  summary: 'Needs a source that reports tracks',
-                  enabled: false,
-                  onTap: () => _pending('Subtitle selection'),
+                  summary: 'Matched against whatever the source calls a track',
+                  value: _prefs.subtitleLanguage,
+                  onTap: () => _choose(
+                    title: 'Subtitle language',
+                    options: kSubtitleLanguages,
+                    current: _prefs.subtitleLanguage,
+                    onPick: _prefs.setSubtitleLanguage,
+                  ),
                 ),
               ],
             ),
@@ -158,7 +247,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
                   icon: Icons.code,
                   title: 'Source code',
                   summary: 'Fork it and build your own APK',
-                  onTap: () => _pending('Opening links'),
+                  onTap: _openSourceCode,
                 ),
               ],
             ),

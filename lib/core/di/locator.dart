@@ -5,6 +5,8 @@ import 'package:path_provider/path_provider.dart';
 import '../../data/repositories/extension_repository_impl.dart';
 import '../../data/storage/app_prefs.dart';
 import '../../data/repositories/extension_manager_impl.dart';
+import '../../data/storage/library_store.dart';
+import '../../data/storage/progress_store.dart';
 import '../../data/storage/repo_store.dart';
 import '../../data/storage/trust_store.dart';
 import '../../domain/repositories/content_source_repository.dart';
@@ -16,13 +18,15 @@ import '../services/http/repo_index_fetcher.dart';
 final locator = GetIt.instance;
 
 Future<void> configureDependencies() async {
-  final (store, prefs, trust) = await _openStorage();
+  final (store, prefs, trust, library, progress) = await _openStorage();
 
   locator
     ..registerLazySingleton<RepoIndexFetcher>(DioRepoIndexFetcher.new)
     ..registerLazySingleton<RepoStore>(() => store)
     ..registerLazySingleton<AppPrefs>(() => prefs)
     ..registerLazySingleton<TrustStore>(() => trust)
+    ..registerLazySingleton<LibraryStore>(() => library)
+    ..registerLazySingleton<ProgressStore>(() => progress)
     ..registerLazySingleton<ContentSourceRepository>(ContentSourceNative.new)
     ..registerLazySingleton<ExtensionManager>(
       () => ExtensionManagerImpl(trustStore: locator<TrustStore>()),
@@ -38,7 +42,8 @@ Future<void> configureDependencies() async {
 /// Falls back to in-memory storage rather than failing to start. Losing the
 /// saved repository list is a far better outcome than an app that will not
 /// open, and the user can paste the URL again.
-Future<(RepoStore, AppPrefs, TrustStore)> _openStorage() async {
+Future<(RepoStore, AppPrefs, TrustStore, LibraryStore, ProgressStore)>
+_openStorage() async {
   try {
     final dir = await getApplicationSupportDirectory();
     Hive.init(dir.path);
@@ -46,8 +51,16 @@ Future<(RepoStore, AppPrefs, TrustStore)> _openStorage() async {
       await HiveRepoStore.open(),
       await HiveAppPrefs.open(),
       await HiveTrustStore.open(),
+      await HiveLibraryStore.open(),
+      await HiveProgressStore.open(),
     );
   } catch (_) {
-    return (InMemoryRepoStore(), InMemoryAppPrefs(), InMemoryTrustStore());
+    return (
+      InMemoryRepoStore(),
+      InMemoryAppPrefs(),
+      InMemoryTrustStore(),
+      InMemoryLibraryStore(),
+      InMemoryProgressStore(),
+    );
   }
 }
