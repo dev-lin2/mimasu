@@ -1,4 +1,5 @@
 import '../domain/entities/source/anime.dart';
+import '../domain/entities/source/source_setting.dart';
 import '../domain/repositories/content_source_repository.dart';
 import 'host/host_api.g.dart';
 
@@ -112,6 +113,43 @@ class ContentSourceNative implements ContentSourceRepository {
     }
     return streams;
   }
+
+  @override
+  Future<List<SourceSetting>> preferences(SourceRef source) async {
+    final raw = await _api.sourcePreferences(
+      source.packageName,
+      source.className,
+    );
+    return [
+      for (final p in raw)
+        SourceSetting(
+          key: p.key,
+          kind: _kind(p.type),
+          title: p.title,
+          summary: p.summary,
+          value: p.value,
+          entries: p.entries.whereType<String>().toList(),
+          entryValues: p.entryValues.whereType<String>().toList(),
+        ),
+    ];
+  }
+
+  @override
+  Future<void> setPreference(SourceRef source, String key, String value) =>
+      _api.setSourcePreference(
+        source.packageName,
+        source.className,
+        key,
+        value,
+      );
+
+  SourceSettingKind _kind(SourcePreferenceType type) => switch (type) {
+    SourcePreferenceType.list => SourceSettingKind.list,
+    SourcePreferenceType.multiList => SourceSettingKind.multiList,
+    SourcePreferenceType.toggle => SourceSettingKind.toggle,
+    SourcePreferenceType.text => SourceSettingKind.text,
+    SourcePreferenceType.unsupported => SourceSettingKind.unsupported,
+  };
 
   @override
   Future<void> invalidate() => _api.clearSourceCache();

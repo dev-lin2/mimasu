@@ -9,6 +9,7 @@ import '../../domain/entities/source/anime.dart';
 import '../../domain/repositories/content_source_repository.dart';
 import '../../domain/repositories/download_repository.dart';
 import '../../application/player/player_cubit.dart';
+import '../../application/source_settings/source_settings_cubit.dart';
 import '../../presentation/screens/details/details_screen.dart';
 import '../../presentation/screens/player/player_screen.dart';
 import '../di/locator.dart';
@@ -23,6 +24,7 @@ import '../../presentation/screens/onboarding/onboarding_screen.dart';
 import '../../presentation/screens/permission/install_permission_screen.dart';
 import '../../presentation/screens/search/search_screen.dart';
 import '../../presentation/screens/settings/settings_screen.dart';
+import '../../presentation/screens/source_settings/source_settings_screen.dart';
 import '../../presentation/shell/app_shell.dart';
 
 /// The nav graph. Four tabs keep their own navigation stacks; everything
@@ -127,6 +129,19 @@ GoRouter buildRouter(AppPrefs prefs) {
               episode,
             ),
             child: const PlayerScreen(),
+          );
+        },
+      ),
+      GoRoute(
+        path: '/source-settings',
+        builder: (context, state) {
+          final source = state.extra! as SourceRef;
+          return BlocProvider(
+            create: (_) => SourceSettingsCubit(
+              locator<ContentSourceRepository>(),
+              source,
+            ),
+            child: const SourceSettingsScreen(),
           );
         },
       ),

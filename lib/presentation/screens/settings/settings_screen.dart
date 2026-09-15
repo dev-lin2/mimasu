@@ -4,6 +4,7 @@ import 'package:go_router/go_router.dart';
 import 'package:url_launcher/url_launcher.dart';
 
 import '../../../application/browse/browse_cubit.dart';
+import '../../../application/downloads/downloads_cubit.dart';
 import '../../../application/extensions/extensions_cubit.dart';
 import '../../../core/di/locator.dart';
 import '../../../core/theme/app_theme.dart';
@@ -97,6 +98,9 @@ class _SettingsScreenState extends State<SettingsScreen> {
     final repoCount = context.select<ExtensionsCubit, int>(
       (c) => c.state.repos.length,
     );
+    final downloadSize = context.select<DownloadsCubit, String>(
+      (c) => c.state.sizeOnDiskLabel,
+    );
 
     return Scaffold(
       body: SafeArea(
@@ -150,7 +154,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
                 SettingsRow(
                   icon: Icons.folder_outlined,
                   title: 'Downloads',
-                  value: '0 B',
+                  value: downloadSize,
                   onTap: () => context.push('/downloads'),
                 ),
                 SettingsRow(

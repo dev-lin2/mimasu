@@ -31,6 +31,20 @@ class DownloadsState {
 
   bool get isEmpty => items.isEmpty;
 
+  /// What downloads are actually occupying, partial transfers included —
+  /// those bytes are on the disk whether or not the file is finished.
+  int get bytesOnDisk =>
+      items.fold(0, (sum, i) => sum + (i.bytesDownloaded.clamp(0, 1 << 62)));
+
+  String get sizeOnDiskLabel {
+    final bytes = bytesOnDisk;
+    if (bytes <= 0) return '0 B';
+    final mb = bytes / (1024 * 1024);
+    if (mb < 1) return '${(bytes / 1024).round()} KB';
+    if (mb >= 1024) return '${(mb / 1024).toStringAsFixed(1)} GB';
+    return '${mb.toStringAsFixed(mb >= 10 ? 0 : 1)} MB';
+  }
+
   /// Where a downloaded episode lives, if it is fully downloaded.
   String? filePathFor(String animeId, String episodeUrl) {
     final id = DownloadRecord.idFor(animeId, episodeUrl);

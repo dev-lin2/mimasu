@@ -22,6 +22,19 @@ enum BrowseMode {
   search,
 }
 
+/// Browsing and playback through a loaded source.
+///
+/// Every method is async: extension code performs network work, which Android
+/// refuses on the platform thread that Pigeon dispatches host calls on.
+/// The kind of control an extension asked for.
+enum SourcePreferenceType {
+  list,
+  multiList,
+  toggle,
+  text,
+  unsupported,
+}
+
 /// What a download is doing. The host owns this, not Dart: a download outlives
 /// the Flutter engine, so its state cannot live in a cubit.
 enum DownloadState {
@@ -728,6 +741,65 @@ class VideosResult {
   }
 }
 
+/// One preference an extension declared through `setupPreferenceScreen`
+/// (INSTRUCTIONS.md §5.6).
+///
+/// Values cross as strings regardless of type — a toggle sends "true" — so
+/// one message shape covers every control. The host converts back to the type
+/// the extension's SharedPreferences expects when writing.
+class SourcePreference {
+  SourcePreference({
+    required this.key,
+    required this.type,
+    required this.title,
+    this.summary,
+    this.value,
+    required this.entries,
+    required this.entryValues,
+  });
+
+  String key;
+
+  SourcePreferenceType type;
+
+  String title;
+
+  String? summary;
+
+  /// Current value, or the extension's default when nothing is stored.
+  String? value;
+
+  /// Labels and their stored values, for the list types. Empty otherwise.
+  List<String?> entries;
+
+  List<String?> entryValues;
+
+  Object encode() {
+    return <Object?>[
+      key,
+      type,
+      title,
+      summary,
+      value,
+      entries,
+      entryValues,
+    ];
+  }
+
+  static SourcePreference decode(Object result) {
+    result as List<Object?>;
+    return SourcePreference(
+      key: result[0]! as String,
+      type: result[1]! as SourcePreferenceType,
+      title: result[2]! as String,
+      summary: result[3] as String?,
+      value: result[4] as String?,
+      entries: (result[5] as List<Object?>?)!.cast<String?>(),
+      entryValues: (result[6] as List<Object?>?)!.cast<String?>(),
+    );
+  }
+}
+
 class DownloadRequest {
   DownloadRequest({
     required this.id,
@@ -864,65 +936,71 @@ class _PigeonCodec extends StandardMessageCodec {
     }    else if (value is BrowseMode) {
       buffer.putUint8(129);
       writeValue(buffer, value.index);
-    }    else if (value is DownloadState) {
+    }    else if (value is SourcePreferenceType) {
       buffer.putUint8(130);
       writeValue(buffer, value.index);
-    }    else if (value is DownloadRefusal) {
+    }    else if (value is DownloadState) {
       buffer.putUint8(131);
       writeValue(buffer, value.index);
-    }    else if (value is HostInfo) {
+    }    else if (value is DownloadRefusal) {
       buffer.putUint8(132);
-      writeValue(buffer, value.encode());
-    }    else if (value is ExtensionCandidate) {
+      writeValue(buffer, value.index);
+    }    else if (value is HostInfo) {
       buffer.putUint8(133);
       writeValue(buffer, value.encode());
-    }    else if (value is FetchedAnime) {
+    }    else if (value is ExtensionCandidate) {
       buffer.putUint8(134);
       writeValue(buffer, value.encode());
-    }    else if (value is FetchResult) {
+    }    else if (value is FetchedAnime) {
       buffer.putUint8(135);
       writeValue(buffer, value.encode());
-    }    else if (value is ApkInfo) {
+    }    else if (value is FetchResult) {
       buffer.putUint8(136);
       writeValue(buffer, value.encode());
-    }    else if (value is LoadedSource) {
+    }    else if (value is ApkInfo) {
       buffer.putUint8(137);
       writeValue(buffer, value.encode());
-    }    else if (value is ClassProbeResult) {
+    }    else if (value is LoadedSource) {
       buffer.putUint8(138);
       writeValue(buffer, value.encode());
-    }    else if (value is AnimeItem) {
+    }    else if (value is ClassProbeResult) {
       buffer.putUint8(139);
       writeValue(buffer, value.encode());
-    }    else if (value is EpisodeItem) {
+    }    else if (value is AnimeItem) {
       buffer.putUint8(140);
       writeValue(buffer, value.encode());
-    }    else if (value is TrackItem) {
+    }    else if (value is EpisodeItem) {
       buffer.putUint8(141);
       writeValue(buffer, value.encode());
-    }    else if (value is VideoItem) {
+    }    else if (value is TrackItem) {
       buffer.putUint8(142);
       writeValue(buffer, value.encode());
-    }    else if (value is BrowseResult) {
+    }    else if (value is VideoItem) {
       buffer.putUint8(143);
       writeValue(buffer, value.encode());
-    }    else if (value is DetailsResult) {
+    }    else if (value is BrowseResult) {
       buffer.putUint8(144);
       writeValue(buffer, value.encode());
-    }    else if (value is EpisodesResult) {
+    }    else if (value is DetailsResult) {
       buffer.putUint8(145);
       writeValue(buffer, value.encode());
-    }    else if (value is VideosResult) {
+    }    else if (value is EpisodesResult) {
       buffer.putUint8(146);
       writeValue(buffer, value.encode());
-    }    else if (value is DownloadRequest) {
+    }    else if (value is VideosResult) {
       buffer.putUint8(147);
       writeValue(buffer, value.encode());
-    }    else if (value is DownloadStatus) {
+    }    else if (value is SourcePreference) {
       buffer.putUint8(148);
       writeValue(buffer, value.encode());
-    }    else if (value is DownloadAccepted) {
+    }    else if (value is DownloadRequest) {
       buffer.putUint8(149);
+      writeValue(buffer, value.encode());
+    }    else if (value is DownloadStatus) {
+      buffer.putUint8(150);
+      writeValue(buffer, value.encode());
+    }    else if (value is DownloadAccepted) {
+      buffer.putUint8(151);
       writeValue(buffer, value.encode());
     } else {
       super.writeValue(buffer, value);
@@ -937,45 +1015,50 @@ class _PigeonCodec extends StandardMessageCodec {
         return value == null ? null : BrowseMode.values[value];
       case 130: 
         final int? value = readValue(buffer) as int?;
-        return value == null ? null : DownloadState.values[value];
+        return value == null ? null : SourcePreferenceType.values[value];
       case 131: 
         final int? value = readValue(buffer) as int?;
-        return value == null ? null : DownloadRefusal.values[value];
+        return value == null ? null : DownloadState.values[value];
       case 132: 
-        return HostInfo.decode(readValue(buffer)!);
+        final int? value = readValue(buffer) as int?;
+        return value == null ? null : DownloadRefusal.values[value];
       case 133: 
-        return ExtensionCandidate.decode(readValue(buffer)!);
+        return HostInfo.decode(readValue(buffer)!);
       case 134: 
-        return FetchedAnime.decode(readValue(buffer)!);
+        return ExtensionCandidate.decode(readValue(buffer)!);
       case 135: 
-        return FetchResult.decode(readValue(buffer)!);
+        return FetchedAnime.decode(readValue(buffer)!);
       case 136: 
-        return ApkInfo.decode(readValue(buffer)!);
+        return FetchResult.decode(readValue(buffer)!);
       case 137: 
-        return LoadedSource.decode(readValue(buffer)!);
+        return ApkInfo.decode(readValue(buffer)!);
       case 138: 
-        return ClassProbeResult.decode(readValue(buffer)!);
+        return LoadedSource.decode(readValue(buffer)!);
       case 139: 
-        return AnimeItem.decode(readValue(buffer)!);
+        return ClassProbeResult.decode(readValue(buffer)!);
       case 140: 
-        return EpisodeItem.decode(readValue(buffer)!);
+        return AnimeItem.decode(readValue(buffer)!);
       case 141: 
-        return TrackItem.decode(readValue(buffer)!);
+        return EpisodeItem.decode(readValue(buffer)!);
       case 142: 
-        return VideoItem.decode(readValue(buffer)!);
+        return TrackItem.decode(readValue(buffer)!);
       case 143: 
-        return BrowseResult.decode(readValue(buffer)!);
+        return VideoItem.decode(readValue(buffer)!);
       case 144: 
-        return DetailsResult.decode(readValue(buffer)!);
+        return BrowseResult.decode(readValue(buffer)!);
       case 145: 
-        return EpisodesResult.decode(readValue(buffer)!);
+        return DetailsResult.decode(readValue(buffer)!);
       case 146: 
-        return VideosResult.decode(readValue(buffer)!);
+        return EpisodesResult.decode(readValue(buffer)!);
       case 147: 
-        return DownloadRequest.decode(readValue(buffer)!);
+        return VideosResult.decode(readValue(buffer)!);
       case 148: 
-        return DownloadStatus.decode(readValue(buffer)!);
+        return SourcePreference.decode(readValue(buffer)!);
       case 149: 
+        return DownloadRequest.decode(readValue(buffer)!);
+      case 150: 
+        return DownloadStatus.decode(readValue(buffer)!);
+      case 151: 
         return DownloadAccepted.decode(readValue(buffer)!);
       default:
         return super.readValueOfType(type, buffer);
@@ -1349,10 +1432,6 @@ class ExtensionHostApi {
   }
 }
 
-/// Browsing and playback through a loaded source.
-///
-/// Every method is async: extension code performs network work, which Android
-/// refuses on the platform thread that Pigeon dispatches host calls on.
 class SourceApi {
   /// Constructor for [SourceApi].  The [binaryMessenger] named argument is
   /// available for dependency injection.  If it is left null, the default
@@ -1365,6 +1444,58 @@ class SourceApi {
   static const MessageCodec<Object?> pigeonChannelCodec = _PigeonCodec();
 
   final String pigeonVar_messageChannelSuffix;
+
+  /// What this source lets the user configure. Empty for a source that
+  /// declares nothing, which is most of them.
+  Future<List<SourcePreference>> sourcePreferences(String packageName, String className) async {
+    final String pigeonVar_channelName = 'dev.flutter.pigeon.mimasu.SourceApi.sourcePreferences$pigeonVar_messageChannelSuffix';
+    final BasicMessageChannel<Object?> pigeonVar_channel = BasicMessageChannel<Object?>(
+      pigeonVar_channelName,
+      pigeonChannelCodec,
+      binaryMessenger: pigeonVar_binaryMessenger,
+    );
+    final List<Object?>? pigeonVar_replyList =
+        await pigeonVar_channel.send(<Object?>[packageName, className]) as List<Object?>?;
+    if (pigeonVar_replyList == null) {
+      throw _createConnectionError(pigeonVar_channelName);
+    } else if (pigeonVar_replyList.length > 1) {
+      throw PlatformException(
+        code: pigeonVar_replyList[0]! as String,
+        message: pigeonVar_replyList[1] as String?,
+        details: pigeonVar_replyList[2],
+      );
+    } else if (pigeonVar_replyList[0] == null) {
+      throw PlatformException(
+        code: 'null-error',
+        message: 'Host platform returned null value for non-null return value.',
+      );
+    } else {
+      return (pigeonVar_replyList[0] as List<Object?>?)!.cast<SourcePreference>();
+    }
+  }
+
+  /// Writes one preference into the store the extension reads.
+  Future<void> setSourcePreference(String packageName, String className, String key, String value) async {
+    final String pigeonVar_channelName = 'dev.flutter.pigeon.mimasu.SourceApi.setSourcePreference$pigeonVar_messageChannelSuffix';
+    final BasicMessageChannel<Object?> pigeonVar_channel = BasicMessageChannel<Object?>(
+      pigeonVar_channelName,
+      pigeonChannelCodec,
+      binaryMessenger: pigeonVar_binaryMessenger,
+    );
+    final List<Object?>? pigeonVar_replyList =
+        await pigeonVar_channel.send(<Object?>[packageName, className, key, value]) as List<Object?>?;
+    if (pigeonVar_replyList == null) {
+      throw _createConnectionError(pigeonVar_channelName);
+    } else if (pigeonVar_replyList.length > 1) {
+      throw PlatformException(
+        code: pigeonVar_replyList[0]! as String,
+        message: pigeonVar_replyList[1] as String?,
+        details: pigeonVar_replyList[2],
+      );
+    } else {
+      return;
+    }
+  }
 
   /// One page of titles. [query] is ignored unless [mode] is search.
   Future<BrowseResult> browse(String packageName, String className, BrowseMode mode, int page, String query) async {

@@ -106,6 +106,48 @@ class SourceApiImpl(private val context: Context) : SourceApi {
         VideosResult(ok = true, items = list.map { it.toItem() }, error = null)
     }
 
+    override fun sourcePreferences(
+        packageName: String,
+        className: String,
+        callback: (Result<List<SourcePreference>>) -> Unit,
+    ) {
+        io.execute {
+            val result = try {
+                PreferenceCollector.collect(context, source(packageName, className))
+            } catch (t: Throwable) {
+                // A source whose preference screen throws is still a usable
+                // source; it just cannot be configured from here.
+                emptyList()
+            }
+            callback(Result.success(result))
+        }
+    }
+
+    override fun setSourcePreference(
+        packageName: String,
+        className: String,
+        key: String,
+        value: String,
+        callback: (Result<Unit>) -> Unit,
+    ) {
+        io.execute {
+            runCatching {
+                val source = source(packageName, className)
+                PreferenceCollector.write(
+                    context,
+                    source,
+                    key,
+                    value,
+                    PreferenceCollector.collect(context, source),
+                )
+                // The instance read its preferences when it was constructed,
+                // so it has to be rebuilt for the change to take effect.
+                synchronized(sources) { sources.remove("$packageName|$className") }
+            }
+            callback(Result.success(Unit))
+        }
+    }
+
     // ---------------------------------------------------------------- plumbing
 
     /**

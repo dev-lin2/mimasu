@@ -142,6 +142,26 @@ class _Header extends StatelessWidget {
         const Text('Mimasu', style: AppText.screenTitle),
         Row(
           children: [
+            // Only meaningful with a source selected, and most sources
+            // declare nothing — but the ones that do are unusable without it.
+            Builder(
+              builder: (context) {
+                final source = context.select<BrowseCubit, SourceRef?>(
+                  (c) => c.state.selected,
+                );
+                if (source == null) return const SizedBox.shrink();
+                return IconButton(
+                  tooltip: 'Source settings',
+                  onPressed: () =>
+                      context.push('/source-settings', extra: source),
+                  icon: const Icon(
+                    Icons.tune,
+                    color: AppColors.textSecondary,
+                    size: 21,
+                  ),
+                );
+              },
+            ),
             IconButton(
               tooltip: 'Downloads',
               onPressed: () => context.push('/downloads'),

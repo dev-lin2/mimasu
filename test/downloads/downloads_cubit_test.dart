@@ -3,6 +3,7 @@ import 'package:mimasu/application/downloads/downloads_cubit.dart';
 import 'package:mimasu/data/storage/app_prefs.dart';
 import 'package:mimasu/domain/entities/downloads/download_record.dart';
 import 'package:mimasu/domain/entities/source/anime.dart';
+import 'package:mimasu/domain/entities/source/source_setting.dart';
 import 'package:mimasu/domain/repositories/content_source_repository.dart';
 import 'package:mimasu/domain/repositories/download_repository.dart';
 
@@ -101,6 +102,12 @@ class _FakeContent implements ContentSourceRepository {
   @override
   Future<AnimePage> search(SourceRef source, String query, {int page = 1}) =>
       throw UnimplementedError();
+
+  @override
+  Future<List<SourceSetting>> preferences(SourceRef source) async => const [];
+
+  @override
+  Future<void> setPreference(SourceRef source, String key, String value) async {}
 
   @override
   Future<void> invalidate() async {}

@@ -371,8 +371,58 @@ class VideosResult {
 ///
 /// Every method is async: extension code performs network work, which Android
 /// refuses on the platform thread that Pigeon dispatches host calls on.
+/// The kind of control an extension asked for.
+enum SourcePreferenceType { list, multiList, toggle, text, unsupported }
+
+/// One preference an extension declared through `setupPreferenceScreen`
+/// (INSTRUCTIONS.md §5.6).
+///
+/// Values cross as strings regardless of type — a toggle sends "true" — so
+/// one message shape covers every control. The host converts back to the type
+/// the extension's SharedPreferences expects when writing.
+class SourcePreference {
+  SourcePreference({
+    required this.key,
+    required this.type,
+    required this.title,
+    required this.summary,
+    required this.value,
+    required this.entries,
+    required this.entryValues,
+  });
+
+  final String key;
+  final SourcePreferenceType type;
+  final String title;
+  final String? summary;
+
+  /// Current value, or the extension's default when nothing is stored.
+  final String? value;
+
+  /// Labels and their stored values, for the list types. Empty otherwise.
+  final List<String?> entries;
+  final List<String?> entryValues;
+}
+
 @HostApi()
 abstract class SourceApi {
+  /// What this source lets the user configure. Empty for a source that
+  /// declares nothing, which is most of them.
+  @async
+  List<SourcePreference> sourcePreferences(
+    String packageName,
+    String className,
+  );
+
+  /// Writes one preference into the store the extension reads.
+  @async
+  void setSourcePreference(
+    String packageName,
+    String className,
+    String key,
+    String value,
+  );
+
   /// One page of titles. [query] is ignored unless [mode] is search.
   @async
   BrowseResult browse(

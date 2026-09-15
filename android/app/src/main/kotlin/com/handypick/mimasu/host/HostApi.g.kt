@@ -60,6 +60,27 @@ enum class BrowseMode(val raw: Int) {
 }
 
 /**
+ * Browsing and playback through a loaded source.
+ *
+ * Every method is async: extension code performs network work, which Android
+ * refuses on the platform thread that Pigeon dispatches host calls on.
+ * The kind of control an extension asked for.
+ */
+enum class SourcePreferenceType(val raw: Int) {
+  LIST(0),
+  MULTI_LIST(1),
+  TOGGLE(2),
+  TEXT(3),
+  UNSUPPORTED(4);
+
+  companion object {
+    fun ofRaw(raw: Int): SourcePreferenceType? {
+      return values().firstOrNull { it.raw == raw }
+    }
+  }
+}
+
+/**
  * What a download is doing. The host owns this, not Dart: a download outlives
  * the Flutter engine, so its state cannot live in a cubit.
  */
@@ -644,6 +665,53 @@ data class VideosResult (
   }
 }
 
+/**
+ * One preference an extension declared through `setupPreferenceScreen`
+ * (INSTRUCTIONS.md §5.6).
+ *
+ * Values cross as strings regardless of type — a toggle sends "true" — so
+ * one message shape covers every control. The host converts back to the type
+ * the extension's SharedPreferences expects when writing.
+ *
+ * Generated class from Pigeon that represents data sent in messages.
+ */
+data class SourcePreference (
+  val key: String,
+  val type: SourcePreferenceType,
+  val title: String,
+  val summary: String? = null,
+  /** Current value, or the extension's default when nothing is stored. */
+  val value: String? = null,
+  /** Labels and their stored values, for the list types. Empty otherwise. */
+  val entries: List<String?>,
+  val entryValues: List<String?>
+)
+ {
+  companion object {
+    fun fromList(pigeonVar_list: List<Any?>): SourcePreference {
+      val key = pigeonVar_list[0] as String
+      val type = pigeonVar_list[1] as SourcePreferenceType
+      val title = pigeonVar_list[2] as String
+      val summary = pigeonVar_list[3] as String?
+      val value = pigeonVar_list[4] as String?
+      val entries = pigeonVar_list[5] as List<String?>
+      val entryValues = pigeonVar_list[6] as List<String?>
+      return SourcePreference(key, type, title, summary, value, entries, entryValues)
+    }
+  }
+  fun toList(): List<Any?> {
+    return listOf(
+      key,
+      type,
+      title,
+      summary,
+      value,
+      entries,
+      entryValues,
+    )
+  }
+}
+
 /** Generated class from Pigeon that represents data sent in messages. */
 data class DownloadRequest (
   /**
@@ -751,100 +819,110 @@ private open class HostApiPigeonCodec : StandardMessageCodec() {
       }
       130.toByte() -> {
         return (readValue(buffer) as Long?)?.let {
-          DownloadState.ofRaw(it.toInt())
+          SourcePreferenceType.ofRaw(it.toInt())
         }
       }
       131.toByte() -> {
         return (readValue(buffer) as Long?)?.let {
-          DownloadRefusal.ofRaw(it.toInt())
+          DownloadState.ofRaw(it.toInt())
         }
       }
       132.toByte() -> {
-        return (readValue(buffer) as? List<Any?>)?.let {
-          HostInfo.fromList(it)
+        return (readValue(buffer) as Long?)?.let {
+          DownloadRefusal.ofRaw(it.toInt())
         }
       }
       133.toByte() -> {
         return (readValue(buffer) as? List<Any?>)?.let {
-          ExtensionCandidate.fromList(it)
+          HostInfo.fromList(it)
         }
       }
       134.toByte() -> {
         return (readValue(buffer) as? List<Any?>)?.let {
-          FetchedAnime.fromList(it)
+          ExtensionCandidate.fromList(it)
         }
       }
       135.toByte() -> {
         return (readValue(buffer) as? List<Any?>)?.let {
-          FetchResult.fromList(it)
+          FetchedAnime.fromList(it)
         }
       }
       136.toByte() -> {
         return (readValue(buffer) as? List<Any?>)?.let {
-          ApkInfo.fromList(it)
+          FetchResult.fromList(it)
         }
       }
       137.toByte() -> {
         return (readValue(buffer) as? List<Any?>)?.let {
-          LoadedSource.fromList(it)
+          ApkInfo.fromList(it)
         }
       }
       138.toByte() -> {
         return (readValue(buffer) as? List<Any?>)?.let {
-          ClassProbeResult.fromList(it)
+          LoadedSource.fromList(it)
         }
       }
       139.toByte() -> {
         return (readValue(buffer) as? List<Any?>)?.let {
-          AnimeItem.fromList(it)
+          ClassProbeResult.fromList(it)
         }
       }
       140.toByte() -> {
         return (readValue(buffer) as? List<Any?>)?.let {
-          EpisodeItem.fromList(it)
+          AnimeItem.fromList(it)
         }
       }
       141.toByte() -> {
         return (readValue(buffer) as? List<Any?>)?.let {
-          TrackItem.fromList(it)
+          EpisodeItem.fromList(it)
         }
       }
       142.toByte() -> {
         return (readValue(buffer) as? List<Any?>)?.let {
-          VideoItem.fromList(it)
+          TrackItem.fromList(it)
         }
       }
       143.toByte() -> {
         return (readValue(buffer) as? List<Any?>)?.let {
-          BrowseResult.fromList(it)
+          VideoItem.fromList(it)
         }
       }
       144.toByte() -> {
         return (readValue(buffer) as? List<Any?>)?.let {
-          DetailsResult.fromList(it)
+          BrowseResult.fromList(it)
         }
       }
       145.toByte() -> {
         return (readValue(buffer) as? List<Any?>)?.let {
-          EpisodesResult.fromList(it)
+          DetailsResult.fromList(it)
         }
       }
       146.toByte() -> {
         return (readValue(buffer) as? List<Any?>)?.let {
-          VideosResult.fromList(it)
+          EpisodesResult.fromList(it)
         }
       }
       147.toByte() -> {
         return (readValue(buffer) as? List<Any?>)?.let {
-          DownloadRequest.fromList(it)
+          VideosResult.fromList(it)
         }
       }
       148.toByte() -> {
         return (readValue(buffer) as? List<Any?>)?.let {
-          DownloadStatus.fromList(it)
+          SourcePreference.fromList(it)
         }
       }
       149.toByte() -> {
+        return (readValue(buffer) as? List<Any?>)?.let {
+          DownloadRequest.fromList(it)
+        }
+      }
+      150.toByte() -> {
+        return (readValue(buffer) as? List<Any?>)?.let {
+          DownloadStatus.fromList(it)
+        }
+      }
+      151.toByte() -> {
         return (readValue(buffer) as? List<Any?>)?.let {
           DownloadAccepted.fromList(it)
         }
@@ -858,84 +936,92 @@ private open class HostApiPigeonCodec : StandardMessageCodec() {
         stream.write(129)
         writeValue(stream, value.raw)
       }
-      is DownloadState -> {
+      is SourcePreferenceType -> {
         stream.write(130)
         writeValue(stream, value.raw)
       }
-      is DownloadRefusal -> {
+      is DownloadState -> {
         stream.write(131)
         writeValue(stream, value.raw)
       }
-      is HostInfo -> {
+      is DownloadRefusal -> {
         stream.write(132)
-        writeValue(stream, value.toList())
+        writeValue(stream, value.raw)
       }
-      is ExtensionCandidate -> {
+      is HostInfo -> {
         stream.write(133)
         writeValue(stream, value.toList())
       }
-      is FetchedAnime -> {
+      is ExtensionCandidate -> {
         stream.write(134)
         writeValue(stream, value.toList())
       }
-      is FetchResult -> {
+      is FetchedAnime -> {
         stream.write(135)
         writeValue(stream, value.toList())
       }
-      is ApkInfo -> {
+      is FetchResult -> {
         stream.write(136)
         writeValue(stream, value.toList())
       }
-      is LoadedSource -> {
+      is ApkInfo -> {
         stream.write(137)
         writeValue(stream, value.toList())
       }
-      is ClassProbeResult -> {
+      is LoadedSource -> {
         stream.write(138)
         writeValue(stream, value.toList())
       }
-      is AnimeItem -> {
+      is ClassProbeResult -> {
         stream.write(139)
         writeValue(stream, value.toList())
       }
-      is EpisodeItem -> {
+      is AnimeItem -> {
         stream.write(140)
         writeValue(stream, value.toList())
       }
-      is TrackItem -> {
+      is EpisodeItem -> {
         stream.write(141)
         writeValue(stream, value.toList())
       }
-      is VideoItem -> {
+      is TrackItem -> {
         stream.write(142)
         writeValue(stream, value.toList())
       }
-      is BrowseResult -> {
+      is VideoItem -> {
         stream.write(143)
         writeValue(stream, value.toList())
       }
-      is DetailsResult -> {
+      is BrowseResult -> {
         stream.write(144)
         writeValue(stream, value.toList())
       }
-      is EpisodesResult -> {
+      is DetailsResult -> {
         stream.write(145)
         writeValue(stream, value.toList())
       }
-      is VideosResult -> {
+      is EpisodesResult -> {
         stream.write(146)
         writeValue(stream, value.toList())
       }
-      is DownloadRequest -> {
+      is VideosResult -> {
         stream.write(147)
         writeValue(stream, value.toList())
       }
-      is DownloadStatus -> {
+      is SourcePreference -> {
         stream.write(148)
         writeValue(stream, value.toList())
       }
-      is DownloadAccepted -> {
+      is DownloadRequest -> {
         stream.write(149)
+        writeValue(stream, value.toList())
+      }
+      is DownloadStatus -> {
+        stream.write(150)
+        writeValue(stream, value.toList())
+      }
+      is DownloadAccepted -> {
+        stream.write(151)
         writeValue(stream, value.toList())
       }
       else -> super.writeValue(stream, value)
@@ -1225,15 +1311,15 @@ interface ExtensionHostApi {
     }
   }
 }
-/**
- * Browsing and playback through a loaded source.
- *
- * Every method is async: extension code performs network work, which Android
- * refuses on the platform thread that Pigeon dispatches host calls on.
- *
- * Generated interface from Pigeon that represents a handler of messages from Flutter.
- */
+/** Generated interface from Pigeon that represents a handler of messages from Flutter. */
 interface SourceApi {
+  /**
+   * What this source lets the user configure. Empty for a source that
+   * declares nothing, which is most of them.
+   */
+  fun sourcePreferences(packageName: String, className: String, callback: (Result<List<SourcePreference>>) -> Unit)
+  /** Writes one preference into the store the extension reads. */
+  fun setSourcePreference(packageName: String, className: String, key: String, value: String, callback: (Result<Unit>) -> Unit)
   /** One page of titles. [query] is ignored unless [mode] is search. */
   fun browse(packageName: String, className: String, mode: BrowseMode, page: Long, query: String, callback: (Result<BrowseResult>) -> Unit)
   fun animeDetails(packageName: String, className: String, animeUrl: String, callback: (Result<DetailsResult>) -> Unit)
@@ -1251,6 +1337,49 @@ interface SourceApi {
     @JvmOverloads
     fun setUp(binaryMessenger: BinaryMessenger, api: SourceApi?, messageChannelSuffix: String = "") {
       val separatedMessageChannelSuffix = if (messageChannelSuffix.isNotEmpty()) ".$messageChannelSuffix" else ""
+      run {
+        val channel = BasicMessageChannel<Any?>(binaryMessenger, "dev.flutter.pigeon.mimasu.SourceApi.sourcePreferences$separatedMessageChannelSuffix", codec)
+        if (api != null) {
+          channel.setMessageHandler { message, reply ->
+            val args = message as List<Any?>
+            val packageNameArg = args[0] as String
+            val classNameArg = args[1] as String
+            api.sourcePreferences(packageNameArg, classNameArg) { result: Result<List<SourcePreference>> ->
+              val error = result.exceptionOrNull()
+              if (error != null) {
+                reply.reply(wrapError(error))
+              } else {
+                val data = result.getOrNull()
+                reply.reply(wrapResult(data))
+              }
+            }
+          }
+        } else {
+          channel.setMessageHandler(null)
+        }
+      }
+      run {
+        val channel = BasicMessageChannel<Any?>(binaryMessenger, "dev.flutter.pigeon.mimasu.SourceApi.setSourcePreference$separatedMessageChannelSuffix", codec)
+        if (api != null) {
+          channel.setMessageHandler { message, reply ->
+            val args = message as List<Any?>
+            val packageNameArg = args[0] as String
+            val classNameArg = args[1] as String
+            val keyArg = args[2] as String
+            val valueArg = args[3] as String
+            api.setSourcePreference(packageNameArg, classNameArg, keyArg, valueArg) { result: Result<Unit> ->
+              val error = result.exceptionOrNull()
+              if (error != null) {
+                reply.reply(wrapError(error))
+              } else {
+                reply.reply(wrapResult(null))
+              }
+            }
+          }
+        } else {
+          channel.setMessageHandler(null)
+        }
+      }
       run {
         val channel = BasicMessageChannel<Any?>(binaryMessenger, "dev.flutter.pigeon.mimasu.SourceApi.browse$separatedMessageChannelSuffix", codec)
         if (api != null) {

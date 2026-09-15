@@ -1,4 +1,5 @@
 import '../entities/source/anime.dart';
+import '../entities/source/source_setting.dart';
 
 /// Why a source call failed. Typed so the UI names the source and the reason
 /// rather than dumping an exception (INSTRUCTIONS.md §5.8).
@@ -51,6 +52,12 @@ abstract interface class ContentSourceRepository {
   /// Streams for one episode, best quality first is not guaranteed — the
   /// source decides the order.
   Future<List<VideoStream>> videos(SourceRef source, String episodeUrl);
+
+  /// What this source lets the user configure. Empty for most sources.
+  Future<List<SourceSetting>> preferences(SourceRef source);
+
+  /// Writes one setting into the store the extension reads.
+  Future<void> setPreference(SourceRef source, String key, String value);
 
   /// Drops cached source instances, after an extension is updated or removed.
   Future<void> invalidate();
