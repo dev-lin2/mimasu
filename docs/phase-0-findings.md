@@ -332,9 +332,9 @@ filters: 1
 ancestry: AnimeHttpSource + interface ConfigurableAnimeSource
 ```
 
-## Where it stops: device certificate trust
+## Certificate trust: what this actually was
 
-A real network fetch through a source fails:
+A real network fetch through a source failed:
 
 ```
 okhttp trust check (raw.githubusercontent.com): HTTP 200
@@ -342,14 +342,63 @@ fetchPopular (4 different sources): SSLHandshakeException,
   "Trust anchor for certification path not found"
 ```
 
-Same client, same device, one works and one does not — so this is **not** the
-shim. The API 31 emulator image ships a 2021 CA store, and these sites chain to
-roots added since. Dart's fetches succeed only because Flutter bundles its own
-CA set; OkHttp uses the platform store.
+Same client, same device, one host works and another does not.
 
-**Untested, therefore unproven: that a source returns real titles.** Everything
-up to the TLS handshake is verified. To close it, run on a device with a current
-CA store, or a newer emulator image. An API 36 image is installed here but its
-AVD would not boot on this SDK layout (`avdmanager` wrote a relative
-`image.sysdir.1` resolved against the wrong parent — a knock-on of `ANDROID_HOME`
-pointing at `Sdk\cmdline-tools` instead of `Sdk`).
+**A correction to an earlier version of this document.** It blamed the API 31
+emulator image for shipping a 2021 CA store. That was wrong, and it was stated
+with more confidence than the evidence carried. `openssl s_client` against the
+failing hosts returns a certificate issued by `O=Fortinet,
+CN=FGT60FTK2209F5NR` — a FortiGate appliance intercepting TLS on this network.
+OkHttp uses the platform trust store and rejects it; Dart's fetches succeed
+because Flutter bundles its own CA set and, separately, because the hosts it
+talks to are not on the interception list.
+
+Consequence for testing: sources whose hosts are intercepted cannot be reached
+from this network at all, by any fix inside the app. Sources that are not
+intercepted work normally, which is how the run below was possible.
+
+## Playback: what an extension needs beyond browsing
+
+Browsing a source and playing from it need different parts of the host. The
+episode-to-stream path pulled in four things nothing earlier had touched:
+
+```
+eu.kanade.tachiyomi.network.OkHttpExtensionsKt   (await/awaitSuccess/parseAs)
+kotlinx.serialization.protobuf.ProtoBuf
+kotlinx.serialization.json.okio.OkioStreamsKt
+app.cash.quickjs.QuickJs
+```
+
+The first is a shim file class, and it has to be a *separate* file from
+`RequestsKt`: an extension that only builds requests links against one, and an
+extension that awaits a response links against the other. Folding both into a
+single `@JvmName` resolves whichever name is on the file and
+`NoClassDefFoundError`s the other.
+
+The other three are host libraries. QuickJS is the surprising one — LMAnime
+ships `assets/synchrony-v2.4.5.1.js` and expects a JavaScript engine on the
+host to run it against obfuscated player pages.
+
+`parseAs` is `inline` + `reified`, so its body is baked into the extension's own
+dex at *its* compile time and resolves `Json` straight out of Injekt. Providing
+a `parseAs` function is therefore not enough; `ShimRegistry` has to register a
+`Json` instance or the inlined code throws.
+
+How the whole set was found, in one step rather than four crash cycles:
+
+```bash
+adb shell pm path <extension.package>
+adb pull <path> lm.apk && unzip -o lm.apk '*.dex'
+grep -a -o -E "L(eu/kanade|kotlinx|okhttp3|org/jsoup|app/cash|uy/kohesive)[A-Za-z0-9/$_]*;" classes.dex | sort -u
+```
+
+Every class the extension can reach for is in that list. Worth doing before
+adding a source, not after it fails.
+
+### Verified end to end
+
+LMAnime, episode 143 of a 145-episode title, on a Pixel 5 emulator (API 31):
+the source resolved a Dailymotion stream (`720p (1280x720) - 2.15 MB/s`),
+libmpv played it with the source's headers, and the external English subtitle
+track rendered. `Video` and `Track` — flagged in this document as unverified
+guesses — held their shape unchanged.

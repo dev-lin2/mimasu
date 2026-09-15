@@ -275,23 +275,29 @@ class _ShelfSkeleton extends StatelessWidget {
           ),
         ),
         const SizedBox(height: 14),
-        Row(
-          children: [
-            for (var i = 0; i < 3; i++)
-              Padding(
-                padding: const EdgeInsets.only(right: 12),
-                child: Container(
-                  width: 124,
-                  height: 186,
-                  decoration: BoxDecoration(
-                    color: AppColors.surfaceRaised,
-                    borderRadius: BorderRadius.circular(
-                      AppSpace.radiusPoster,
+        // Three posters are wider than a phone, exactly as the real shelf is.
+        // It scrolls there; here it only has to clip, so the physics are off.
+        SingleChildScrollView(
+          scrollDirection: Axis.horizontal,
+          physics: const NeverScrollableScrollPhysics(),
+          child: Row(
+            children: [
+              for (var i = 0; i < 3; i++)
+                Padding(
+                  padding: const EdgeInsets.only(right: 12),
+                  child: Container(
+                    width: 124,
+                    height: 186,
+                    decoration: BoxDecoration(
+                      color: AppColors.surfaceRaised,
+                      borderRadius: BorderRadius.circular(
+                        AppSpace.radiusPoster,
+                      ),
                     ),
                   ),
                 ),
-              ),
-          ],
+            ],
+          ),
         ),
       ],
     ),

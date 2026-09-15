@@ -7,7 +7,9 @@ import '../../application/details/details_cubit.dart';
 import '../../data/storage/app_prefs.dart';
 import '../../domain/entities/source/anime.dart';
 import '../../domain/repositories/content_source_repository.dart';
+import '../../application/player/player_cubit.dart';
 import '../../presentation/screens/details/details_screen.dart';
+import '../../presentation/screens/player/player_screen.dart';
 import '../di/locator.dart';
 import '../../presentation/screens/downloads/downloads_screen.dart';
 import '../../presentation/screens/extensions/extensions_screen.dart';
@@ -108,6 +110,20 @@ GoRouter buildRouter(AppPrefs prefs) {
             create: (_) =>
                 DetailsCubit(locator<ContentSourceRepository>(), anime),
             child: const DetailsScreen(),
+          );
+        },
+      ),
+      GoRoute(
+        path: '/player',
+        builder: (context, state) {
+          final (anime, episode) = state.extra! as (Anime, Episode);
+          return BlocProvider(
+            create: (_) => PlayerCubit(
+              locator<ContentSourceRepository>(),
+              anime,
+              episode,
+            ),
+            child: const PlayerScreen(),
           );
         },
       ),

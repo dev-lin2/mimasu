@@ -61,6 +61,15 @@ dependencies {
     implementation("androidx.preference:preference-ktx:1.2.1")
     implementation("org.jetbrains.kotlinx:kotlinx-serialization-json:1.7.3")
 
+    // LMAnime's dex names these three directly. They are easy to miss because
+    // nothing fails until a source reaches the code path that touches them —
+    // in this case, the one that resolves an episode into a stream.
+    implementation("org.jetbrains.kotlinx:kotlinx-serialization-json-okio:1.7.3")
+    implementation("org.jetbrains.kotlinx:kotlinx-serialization-protobuf:1.7.3")
+    // Sources run JavaScript to unpack obfuscated player pages; several ship
+    // synchrony as an asset and expect a JS engine on the host.
+    implementation("app.cash.quickjs:quickjs-android:0.9.2")
+
     // The anime lib is suspend-based, so extensions may override suspend
     // members. Keeping the shim faithful to that needs coroutines present.
     implementation("org.jetbrains.kotlinx:kotlinx-coroutines-android:1.9.0")

@@ -144,9 +144,10 @@ class ContentSourceNative implements ContentSourceRepository {
         text.contains('Trust anchor')) {
       return SourceFailure(
         SourceFailureKind.network,
-        "$name's certificate was not accepted by this device. That is usually "
-            'an out-of-date system certificate store rather than a problem '
-            'with the source.',
+        "$name's certificate was not accepted by this device. Something "
+            'between the app and the source is presenting its own '
+            'certificate, or the source is using one this device does not '
+            'trust.',
         sourceName: source.sourceName,
       );
     }

@@ -148,18 +148,3 @@ fun POST(
     .headers(headers)
     .cacheControl(cache)
     .build()
-
-/** Older extensions consume responses as an Observable. */
-fun okhttp3.Call.asObservable(): rx.Observable<Response> =
-    rx.Observable.fromCallable { execute() }
-
-fun okhttp3.Call.asObservableSuccess(): rx.Observable<Response> =
-    asObservable().map { response ->
-        if (!response.isSuccessful) {
-            response.close()
-            throw Exception("HTTP error ${response.code}")
-        }
-        response
-    }
-
-suspend fun okhttp3.Call.await(): Response = execute()

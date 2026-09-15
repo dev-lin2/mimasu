@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
+import 'package:media_kit/media_kit.dart';
 
 import 'application/browse/browse_cubit.dart';
 import 'application/extensions/extensions_cubit.dart';
@@ -13,6 +14,8 @@ import 'domain/repositories/extension_repository.dart';
 
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
+  // libmpv has to be initialised before any Player is constructed.
+  MediaKit.ensureInitialized();
   await configureDependencies();
   runApp(MimasuApp(prefs: locator<AppPrefs>()));
 }

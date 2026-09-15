@@ -3,6 +3,7 @@ package com.handypick.mimasu.host
 import android.content.Context
 import android.content.SharedPreferences
 import eu.kanade.tachiyomi.network.NetworkHelper
+import kotlinx.serialization.json.Json
 import uy.kohesive.injekt.Injekt
 
 /**
@@ -29,6 +30,20 @@ object ShimRegistry {
         Injekt.addSingletonFactory(SharedPreferences::class.java) {
             app.getSharedPreferences("extension_prefs", Context.MODE_PRIVATE)
         }
+
+        // `parseAs` is inlined into extension code, so it looks this up
+        // directly rather than going through any shim function of ours.
+        // Lenient on purpose: sources parse APIs they do not control, and a
+        // field added upstream should not break playback.
+        Injekt.addSingleton(
+            Json::class.java,
+            Json {
+                ignoreUnknownKeys = true
+                isLenient = true
+                explicitNulls = false
+                coerceInputValues = true
+            },
+        )
 
         Injekt.addSingleton(Context::class.java, app)
         Injekt.addSingletonFactory(android.app.Application::class.java) {

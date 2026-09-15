@@ -92,8 +92,8 @@ class SEpisodeImpl : SEpisode {
 /**
  * An external subtitle or audio track accompanying a video.
  *
- * Shape not yet verified against an extension that constructs one — this
- * extension does not. Confirm before relying on playback tracks (§8).
+ * Shape confirmed by playback: LMAnime constructs these for its external
+ * subtitle tracks and mpv renders them.
  */
 data class Track(val url: String, val lang: String)
 
@@ -101,7 +101,7 @@ data class Track(val url: String, val lang: String)
  * One playable stream. `headers` matters: many sources 403 without a Referer,
  * and §8 requires passing them through to the player.
  *
- * Constructor shape not yet verified — see the note above.
+ * Constructor shape confirmed by playback — see the note above.
  */
 class Video(
     val url: String,

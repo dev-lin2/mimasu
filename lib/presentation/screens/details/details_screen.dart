@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
+import 'package:go_router/go_router.dart';
 
 import '../../../application/details/details_cubit.dart';
 import '../../../core/theme/app_theme.dart';
@@ -105,7 +106,7 @@ class _DetailsScreenState extends State<DetailsScreen> {
                         )
                       else
                         for (final e in state.episodes)
-                          _EpisodeRow(episode: e),
+                          _EpisodeRow(anime: anime, episode: e),
                     ],
                   ),
                 ),
@@ -293,7 +294,8 @@ class _Chip extends StatelessWidget {
 }
 
 class _EpisodeRow extends StatelessWidget {
-  const _EpisodeRow({required this.episode});
+  const _EpisodeRow({required this.anime, required this.episode});
+  final Anime anime;
   final Episode episode;
 
   @override
@@ -306,9 +308,7 @@ class _EpisodeRow extends StatelessWidget {
     return Padding(
       padding: const EdgeInsets.only(bottom: 14),
       child: InkWell(
-        onTap: () => ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('Playback arrives with the player.')),
-        ),
+        onTap: () => context.push('/player', extra: (anime, episode)),
         borderRadius: BorderRadius.circular(8),
         child: Row(
           children: [
